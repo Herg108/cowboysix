@@ -71,6 +71,91 @@ async def poll_price(client: httpx.AsyncClient, token_id: str) -> dict | None:
         return None
 
 
+def load_hltv_events(chartfile: Path, records: list = None):
+    """Load HLTV events from the parent directory, filtered to the map
+    that overlaps in time with our price data.
+
+    Chart is at: data/<date>/<match>/map1/live_chart.html
+    HLTV file is at: data/<date>/<match>/hltv_events.jsonl
+
+    Instead of matching by map number (which breaks if we started recording
+    mid-match), we match by time: find the HLTV map whose events overlap
+    with our price data timestamps.
+    """
+    hltv_file = chartfile.parent.parent / "hltv_events.jsonl"
+    if not hltv_file.exists():
+        return []
+
+    # Read all events
+    all_events = []
+    with open(hltv_file) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                all_events.append(json_mod.loads(line))
+
+    if not all_events:
+        return []
+
+    # Get the time range of our price data
+    if records and len(records) > 1:
+        price_start = records[0].get("ts_ms", 0)
+        price_end = records[-1].get("ts_ms", 0)
+    else:
+        # Fallback: read from the market_prices.jsonl in the same folder
+        prices_file = chartfile.parent / "market_prices.jsonl"
+        if prices_file.exists():
+            lines = prices_file.read_text().strip().split("\n")
+            if lines:
+                price_start = json_mod.loads(lines[0]).get("ts_ms", 0)
+                price_end = json_mod.loads(lines[-1]).get("ts_ms", 0)
+            else:
+                price_start = price_end = 0
+        else:
+            price_start = price_end = 0
+
+    # Get round_end events and all events with a map field (for time overlap)
+    maps_all = {}  # map_name -> list of all events with that map
+    round_ends = []  # all round_end events
+    for e in all_events:
+        map_name = e.get("map")
+        if map_name:
+            if map_name not in maps_all:
+                maps_all[map_name] = []
+            maps_all[map_name].append(e)
+        if e.get("type") == "round_end":
+            round_ends.append(e)
+
+    # Find the map with the most time overlap with our price data
+    best_map = None
+    best_overlap = 0
+    for map_name, evts in maps_all.items():
+        map_start = evts[0].get("ts_ms", 0)
+        map_end = evts[-1].get("ts_ms", 0)
+        overlap_start = max(price_start, map_start)
+        overlap_end = min(price_end, map_end)
+        overlap = max(0, overlap_end - overlap_start)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_map = map_name
+
+    if best_map is None:
+        return []
+
+    # Get time range of the best map to filter round_ends
+    map_evts = maps_all[best_map]
+    map_start = map_evts[0].get("ts_ms", 0)
+    map_end = map_evts[-1].get("ts_ms", 0)
+
+    # Return round_end events within the map's time range
+    events = []
+    for e in round_ends:
+        ts = e.get("ts_ms", 0)
+        if map_start <= ts <= map_end:
+            events.append(e)
+    return events
+
+
 def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str):
     t1 = team1_name.lower()
     t2 = team2_name.lower()
@@ -82,6 +167,58 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
 
     last_t1 = next((v for v in reversed(t1_mid) if v is not None), 0)
     last_t2 = next((v for v in reversed(t2_mid) if v is not None), 0)
+
+    # Load HLTV round events for score markers
+    hltv_events = load_hltv_events(chartfile, records)
+    score_markers_js = ""
+    score_status = ""
+
+    if hltv_events:
+        last_ev = hltv_events[-1]
+        ct_s = last_ev.get("ct_score", 0)
+        t_s = last_ev.get("t_score", 0)
+        score_status = f" | Round ends: {len(hltv_events)}"
+
+        # Build vertical lines, score annotations, and marker points on the price curve
+        shapes = []
+        annotations = []
+        marker_x = []
+        marker_y = []
+        marker_text = []
+        for ev in hltv_events:
+            ts = ev.get("ts_iso", "")
+            ct_score = ev.get("ct_score", 0)
+            t_score = ev.get("t_score", 0)
+            winner = ev.get("winner", "?")
+            win_type = ev.get("win_type", "?").replace("_", " ")
+
+            # Vertical line
+            shapes.append(f"""{{
+                type: 'line', x0: '{ts}', x1: '{ts}', y0: 0, y1: 1,
+                line: {{color: 'rgba(255,255,0,0.3)', width: 1, dash: 'dot'}}
+            }}""")
+
+            # Score label at top
+            annotations.append(f"""{{
+                x: '{ts}', y: 1.03, xref: 'x', yref: 'y',
+                text: '{ct_score}-{t_score}', showarrow: false,
+                font: {{color: '#ffdd57', size: 10}}
+            }}""")
+
+            # Find the price at this timestamp to place marker on the line
+            price_at_ts = None
+            for r in records:
+                if r["ts_iso"] >= ts:
+                    price_at_ts = r.get(f"{t1}_mid")
+                    break
+            if price_at_ts is not None:
+                marker_x.append(ts)
+                marker_y.append(price_at_ts)
+                marker_text.append(f"R end: CT {ct_score}-{t_score} T<br>{win_type}")
+
+        shapes_str = ",\n".join(shapes)
+        annots_str = ",\n".join(annotations)
+        score_markers_js = f"shapes: [{shapes_str}],\n  annotations: [{annots_str}],"
 
     html = f"""<!DOCTYPE html>
 <html><head>
@@ -95,19 +232,21 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
 </style>
 </head><body>
 <h1>{team1_name} vs {team2_name} — Live Prices</h1>
-<div class="info">{len(records)} pts | {timestamps[-1]} UTC | {team1_name}: {last_t1*100:.1f}% | {team2_name}: {last_t2*100:.1f}% | <b>Reload to refresh</b></div>
+<div class="info">{len(records)} pts | {timestamps[-1]} UTC | {team1_name}: {last_t1*100:.1f}% | {team2_name}: {last_t2*100:.1f}%{score_status} | <b>Reload to refresh</b></div>
 <div id="chart"></div>
 <script>
 Plotly.newPlot('chart', [
   {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_mid)}, name: '{team1_name}', line: {{color: '#e94560', width: 2}}}},
   {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t2_mid)}, name: '{team2_name}', line: {{color: '#0f3460', width: 2}}}},
   {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_bid)}, name: 'Bid', line: {{color: '#e94560', width: 1, dash: 'dot'}}, showlegend: false}},
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_ask)}, name: 'Ask', line: {{color: '#e94560', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(233,69,96,0.1)', showlegend: false}}
+  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_ask)}, name: 'Ask', line: {{color: '#e94560', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(233,69,96,0.1)', showlegend: false}},
+  {{x: {json_mod.dumps(marker_x if hltv_events else [])}, y: {json_mod.dumps(marker_y if hltv_events else [])}, text: {json_mod.dumps(marker_text if hltv_events else [])}, name: 'Round End', mode: 'markers', marker: {{color: '#ffdd57', size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}}
 ], {{
   paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
   xaxis: {{title: 'Time (UTC)', gridcolor: '#333'}},
-  yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1], tickformat: '.0%'}},
-  legend: {{x: 0.01, y: 0.99}}, hovermode: 'x unified', margin: {{t: 20, b: 80}}
+  yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.05], tickformat: '.0%'}},
+  legend: {{x: 0.01, y: 0.99}}, hovermode: 'x unified', margin: {{t: 40, b: 80}},
+  {score_markers_js}
 }}, {{responsive: true}});
 </script>
 </body></html>"""
@@ -139,14 +278,38 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
         print(f"Loaded {len(all_records)} existing records")
 
     tick = 0
+    last_t1 = None  # carry forward last known prices
+    last_t2 = None
+    na_streak_start = None  # track consecutive N/A responses
+    NA_TIMEOUT = 30  # seconds of consecutive N/A before auto-stop
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
             ts_ms = int(time.time() * 1000)
 
-            t1_data, t2_data = await asyncio.gather(
+            t1_raw, t2_raw = await asyncio.gather(
                 poll_price(client, team1_token),
                 poll_price(client, team2_token),
             )
+
+            # Track consecutive N/A streak
+            if t1_raw is None and t2_raw is None:
+                if na_streak_start is None:
+                    na_streak_start = time.time()
+                elif time.time() - na_streak_start >= NA_TIMEOUT:
+                    print(f"\n[DONE] Market empty for {NA_TIMEOUT}s — market resolved. Stopping.")
+                    write_chart(chartfile, all_records, team1_name, team2_name)
+                    break
+            else:
+                na_streak_start = None
+
+            # If API returns None, use last known values
+            t1_data = t1_raw if t1_raw is not None else last_t1
+            t2_data = t2_raw if t2_raw is not None else last_t2
+
+            if t1_raw is not None:
+                last_t1 = t1_raw
+            if t2_raw is not None:
+                last_t2 = t2_raw
 
             entry = {
                 "ts_ms": ts_ms,
@@ -167,16 +330,6 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
             # Regenerate HTML chart every 10 ticks (~5 seconds)
             if tick % 3 == 0 and len(all_records) > 1:
                 write_chart(chartfile, all_records, team1_name, team2_name)
-
-            # Auto-stop when market resolves (one side hits 0.99+)
-            t1_mid = t1_data["mid"] if t1_data else None
-            t2_mid = t2_data["mid"] if t2_data else None
-            if t1_mid is not None and t2_mid is not None:
-                if t1_mid >= 0.99 or t2_mid >= 0.99:
-                    winner = team1_name if t1_mid >= 0.99 else team2_name
-                    print(f"\n[DONE] Market resolved — {winner} wins. Stopping recorder.")
-                    write_chart(chartfile, all_records, team1_name, team2_name)
-                    break
 
             tick += 1
             if tick % 5 == 0:

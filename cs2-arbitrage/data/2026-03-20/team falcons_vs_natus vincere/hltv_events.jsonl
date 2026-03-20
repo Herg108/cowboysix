@@ -1,0 +1,136 @@
+{"ts_ms": 1774033649360, "ts_iso": "2026-03-20T19:07:29", "type": "scoreboard", "event": "score_change", "round": 18, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 11, "team2": "Falcons", "team2_score": 7, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 3, "ct_alive": 0}
+{"ts_ms": 1774033649361, "ts_iso": "2026-03-20T19:07:29", "type": "scoreboard", "event": "round_update", "round": 19, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 11, "team2": "Falcons", "team2_score": 7, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774033690608, "ts_iso": "2026-03-20T19:08:10", "type": "kill", "killer": "TeSeS", "victim": "iM", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774033691631, "ts_iso": "2026-03-20T19:08:11", "type": "kill", "killer": "b1t", "victim": "TeSeS", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033693663, "ts_iso": "2026-03-20T19:08:13", "type": "kill", "killer": "b1t", "victim": "NiKo", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033705341, "ts_iso": "2026-03-20T19:08:25", "type": "bomb_planted"}
+{"ts_ms": 1774033744936, "ts_iso": "2026-03-20T19:09:04", "type": "kill", "killer": "m0NESY", "victim": "makazze", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774033746972, "ts_iso": "2026-03-20T19:09:06", "type": "scoreboard", "event": "score_change", "round": 19, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 12, "team2": "Falcons", "team2_score": 7, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 3, "ct_alive": 3}
+{"ts_ms": 1774033746973, "ts_iso": "2026-03-20T19:09:06", "type": "round_end", "ct_score": 7, "t_score": 12, "winner": "TERRORIST", "win_type": "Target_Bombed"}
+{"ts_ms": 1774033773978, "ts_iso": "2026-03-20T19:09:33", "type": "scoreboard", "event": "round_update", "round": 20, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 12, "team2": "Falcons", "team2_score": 7, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774033806049, "ts_iso": "2026-03-20T19:10:06", "type": "kill", "killer": "makazze", "victim": "kyousuke", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774033820320, "ts_iso": "2026-03-20T19:10:20", "type": "kill", "killer": "makazze", "victim": "kyxsan", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033823887, "ts_iso": "2026-03-20T19:10:23", "type": "kill", "killer": "m0NESY", "victim": "b1t", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774033824902, "ts_iso": "2026-03-20T19:10:24", "type": "kill", "killer": "iM", "victim": "Aleksib", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033825412, "ts_iso": "2026-03-20T19:10:25", "type": "kill", "killer": "w0nderful", "victim": "NiKo", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774033836105, "ts_iso": "2026-03-20T19:10:36", "type": "kill", "killer": "m0NESY", "victim": "w0nderful", "weapon": "hegrenade", "headshot": false}
+{"ts_ms": 1774033841190, "ts_iso": "2026-03-20T19:10:41", "type": "bomb_planted"}
+{"ts_ms": 1774033842211, "ts_iso": "2026-03-20T19:10:42", "type": "kill", "killer": "m0NESY", "victim": "iM", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774033857454, "ts_iso": "2026-03-20T19:10:57", "type": "kill", "killer": "m0NESY", "victim": "makazze", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033871668, "ts_iso": "2026-03-20T19:11:11", "type": "scoreboard", "event": "score_change", "round": 20, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 12, "team2": "Falcons", "team2_score": 8, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 0, "ct_alive": 2}
+{"ts_ms": 1774033871669, "ts_iso": "2026-03-20T19:11:11", "type": "round_end", "ct_score": 8, "t_score": 12, "winner": "CT", "win_type": "Bomb_Defused"}
+{"ts_ms": 1774033898626, "ts_iso": "2026-03-20T19:11:38", "type": "scoreboard", "event": "round_update", "round": 21, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 12, "team2": "Falcons", "team2_score": 8, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774033911875, "ts_iso": "2026-03-20T19:11:51", "type": "kill", "killer": "makazze", "victim": "kyousuke", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033912387, "ts_iso": "2026-03-20T19:11:52", "type": "kill", "killer": "NiKo", "victim": "makazze", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774033944454, "ts_iso": "2026-03-20T19:12:24", "type": "kill", "killer": "NiKo", "victim": "iM", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774033948538, "ts_iso": "2026-03-20T19:12:28", "type": "kill", "killer": "Aleksib", "victim": "NiKo", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774033966363, "ts_iso": "2026-03-20T19:12:46", "type": "kill", "killer": "b1t", "victim": "m0NESY", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033975537, "ts_iso": "2026-03-20T19:12:55", "type": "kill", "killer": "TeSeS", "victim": "Aleksib", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033983673, "ts_iso": "2026-03-20T19:13:03", "type": "kill", "killer": "TeSeS", "victim": "b1t", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774033987743, "ts_iso": "2026-03-20T19:13:07", "type": "kill", "killer": "w0nderful", "victim": "TeSeS", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774034006586, "ts_iso": "2026-03-20T19:13:26", "type": "bomb_planted"}
+{"ts_ms": 1774034021810, "ts_iso": "2026-03-20T19:13:41", "type": "kill", "killer": "kyxsan", "victim": "w0nderful", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774034030982, "ts_iso": "2026-03-20T19:13:50", "type": "scoreboard", "event": "score_change", "round": 21, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 12, "team2": "Falcons", "team2_score": 9, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 0, "ct_alive": 1}
+{"ts_ms": 1774034030983, "ts_iso": "2026-03-20T19:13:50", "type": "round_end", "ct_score": 9, "t_score": 12, "winner": "CT", "win_type": "Bomb_Defused"}
+{"ts_ms": 1774034057395, "ts_iso": "2026-03-20T19:14:17", "type": "scoreboard", "event": "round_update", "round": 22, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 12, "team2": "Falcons", "team2_score": 9, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774034067582, "ts_iso": "2026-03-20T19:14:27", "type": "kill", "killer": "m0NESY", "victim": "Aleksib", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774034108803, "ts_iso": "2026-03-20T19:15:08", "type": "kill", "killer": "w0nderful", "victim": "m0NESY", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774034114905, "ts_iso": "2026-03-20T19:15:14", "type": "kill", "killer": "TeSeS", "victim": "iM", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774034122522, "ts_iso": "2026-03-20T19:15:22", "type": "kill", "killer": "TeSeS", "victim": "w0nderful", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774034123537, "ts_iso": "2026-03-20T19:15:23", "type": "kill", "killer": "makazze", "victim": "kyousuke", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774034123537, "ts_iso": "2026-03-20T19:15:23", "type": "kill", "killer": "makazze", "victim": "NiKo", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774034124048, "ts_iso": "2026-03-20T19:15:24", "type": "kill", "killer": "b1t", "victim": "TeSeS", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774034132181, "ts_iso": "2026-03-20T19:15:32", "type": "bomb_planted"}
+{"ts_ms": 1774034149505, "ts_iso": "2026-03-20T19:15:49", "type": "kill", "killer": "b1t", "victim": "kyxsan", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774034149505, "ts_iso": "2026-03-20T19:15:49", "type": "scoreboard", "event": "score_change", "round": 22, "map": "de_inferno", "team1": "Natus Vincere", "team1_score": 13, "team2": "Falcons", "team2_score": 9, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774034149505, "ts_iso": "2026-03-20T19:15:49", "type": "round_end", "ct_score": 9, "t_score": 13, "winner": "TERRORIST", "win_type": "Terrorists_Win"}
+{"ts_ms": 1774035314116, "ts_iso": "2026-03-20T19:35:14", "type": "scoreboard", "event": "score_change", "round": 2, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 1, "team2": "Falcons", "team2_score": 0, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774035314119, "ts_iso": "2026-03-20T19:35:14", "type": "kill", "killer": "iM", "victim": "kyxsan", "weapon": "mac10", "headshot": false}
+{"ts_ms": 1774035317797, "ts_iso": "2026-03-20T19:35:17", "type": "bomb_planted"}
+{"ts_ms": 1774035358528, "ts_iso": "2026-03-20T19:35:58", "type": "scoreboard", "event": "score_change", "round": 2, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 2, "team2": "Falcons", "team2_score": 0, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 4}
+{"ts_ms": 1774035358529, "ts_iso": "2026-03-20T19:35:58", "type": "round_end", "ct_score": 0, "t_score": 2, "winner": "TERRORIST", "win_type": "Target_Bombed"}
+{"ts_ms": 1774035385876, "ts_iso": "2026-03-20T19:36:25", "type": "scoreboard", "event": "round_update", "round": 3, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 2, "team2": "Falcons", "team2_score": 0, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774035400575, "ts_iso": "2026-03-20T19:36:40", "type": "kill", "killer": "makazze", "victim": "m0NESY", "weapon": "mac10", "headshot": false}
+{"ts_ms": 1774035409692, "ts_iso": "2026-03-20T19:36:49", "type": "kill", "killer": "iM", "victim": "TeSeS", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774035420332, "ts_iso": "2026-03-20T19:37:00", "type": "kill", "killer": "w0nderful", "victim": "kyousuke", "weapon": "galilar", "headshot": true}
+{"ts_ms": 1774035421857, "ts_iso": "2026-03-20T19:37:01", "type": "kill", "killer": "w0nderful", "victim": "NiKo", "weapon": "galilar", "headshot": true}
+{"ts_ms": 1774035421857, "ts_iso": "2026-03-20T19:37:01", "type": "kill", "killer": "w0nderful", "victim": "kyxsan", "weapon": "galilar", "headshot": true}
+{"ts_ms": 1774035422360, "ts_iso": "2026-03-20T19:37:02", "type": "scoreboard", "event": "score_change", "round": 3, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 3, "team2": "Falcons", "team2_score": 0, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 0}
+{"ts_ms": 1774035422361, "ts_iso": "2026-03-20T19:37:02", "type": "round_end", "ct_score": 0, "t_score": 3, "winner": "TERRORIST", "win_type": "Terrorists_Win"}
+{"ts_ms": 1774035448206, "ts_iso": "2026-03-20T19:37:28", "type": "scoreboard", "event": "round_update", "round": 4, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 3, "team2": "Falcons", "team2_score": 0, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774035500497, "ts_iso": "2026-03-20T19:38:20", "type": "kill", "killer": "b1t", "victim": "kyxsan", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774035504000, "ts_iso": "2026-03-20T19:38:24", "type": "kill", "killer": "kyousuke", "victim": "makazze", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774035504510, "ts_iso": "2026-03-20T19:38:24", "type": "kill", "killer": "Aleksib", "victim": "kyousuke", "weapon": "mac10", "headshot": false}
+{"ts_ms": 1774035513621, "ts_iso": "2026-03-20T19:38:33", "type": "bomb_planted"}
+{"ts_ms": 1774035554109, "ts_iso": "2026-03-20T19:39:14", "type": "scoreboard", "event": "score_change", "round": 4, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 4, "team2": "Falcons", "team2_score": 0, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 4, "ct_alive": 3}
+{"ts_ms": 1774035554109, "ts_iso": "2026-03-20T19:39:14", "type": "round_end", "ct_score": 0, "t_score": 4, "winner": "TERRORIST", "win_type": "Target_Bombed"}
+{"ts_ms": 1774035616407, "ts_iso": "2026-03-20T19:40:16", "type": "scoreboard", "event": "round_update", "round": 5, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 4, "team2": "Falcons", "team2_score": 0, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774035630079, "ts_iso": "2026-03-20T19:40:30", "type": "kill", "killer": "TeSeS", "victim": "b1t", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774035688823, "ts_iso": "2026-03-20T19:41:28", "type": "kill", "killer": "TeSeS", "victim": "Aleksib", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774035695927, "ts_iso": "2026-03-20T19:41:35", "type": "kill", "killer": "makazze", "victim": "NiKo", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774035697961, "ts_iso": "2026-03-20T19:41:37", "type": "kill", "killer": "TeSeS", "victim": "makazze", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774035702021, "ts_iso": "2026-03-20T19:41:42", "type": "kill", "killer": "TeSeS", "victim": "w0nderful", "weapon": "usp_silencer", "headshot": true}
+{"ts_ms": 1774035703035, "ts_iso": "2026-03-20T19:41:43", "type": "kill", "killer": "kyousuke", "victim": "iM", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774035703545, "ts_iso": "2026-03-20T19:41:43", "type": "scoreboard", "event": "score_change", "round": 5, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 4, "team2": "Falcons", "team2_score": 1, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 0, "ct_alive": 4}
+{"ts_ms": 1774035703546, "ts_iso": "2026-03-20T19:41:43", "type": "round_end", "ct_score": 1, "t_score": 4, "winner": "CT", "win_type": "CTs_Win"}
+{"ts_ms": 1774035729893, "ts_iso": "2026-03-20T19:42:09", "type": "scoreboard", "event": "round_update", "round": 6, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 4, "team2": "Falcons", "team2_score": 1, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774035790179, "ts_iso": "2026-03-20T19:43:10", "type": "kill", "killer": "w0nderful", "victim": "NiKo", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774035799306, "ts_iso": "2026-03-20T19:43:19", "type": "kill", "killer": "Aleksib", "victim": "kyxsan", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774035800321, "ts_iso": "2026-03-20T19:43:20", "type": "kill", "killer": "TeSeS", "victim": "makazze", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774035800826, "ts_iso": "2026-03-20T19:43:20", "type": "kill", "killer": "Aleksib", "victim": "kyousuke", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774035819601, "ts_iso": "2026-03-20T19:43:39", "type": "bomb_planted"}
+{"ts_ms": 1774035860626, "ts_iso": "2026-03-20T19:44:20", "type": "scoreboard", "event": "score_change", "round": 6, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 5, "team2": "Falcons", "team2_score": 1, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 4, "ct_alive": 2}
+{"ts_ms": 1774035860626, "ts_iso": "2026-03-20T19:44:20", "type": "round_end", "ct_score": 1, "t_score": 5, "winner": "TERRORIST", "win_type": "Target_Bombed"}
+{"ts_ms": 1774035887486, "ts_iso": "2026-03-20T19:44:47", "type": "scoreboard", "event": "round_update", "round": 7, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 5, "team2": "Falcons", "team2_score": 1, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774035899113, "ts_iso": "2026-03-20T19:44:59", "type": "kill", "killer": "m0NESY", "victim": "makazze", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774035956027, "ts_iso": "2026-03-20T19:45:56", "type": "kill", "killer": "NiKo", "victim": "b1t", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774035962639, "ts_iso": "2026-03-20T19:46:02", "type": "kill", "killer": "TeSeS", "victim": "iM", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774035963143, "ts_iso": "2026-03-20T19:46:03", "type": "kill", "killer": "w0nderful", "victim": "NiKo", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774035972315, "ts_iso": "2026-03-20T19:46:12", "type": "bomb_planted"}
+{"ts_ms": 1774035977408, "ts_iso": "2026-03-20T19:46:17", "type": "kill", "killer": "TeSeS", "victim": "w0nderful", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774035977914, "ts_iso": "2026-03-20T19:46:17", "type": "kill", "killer": "Aleksib", "victim": "kyousuke", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774035978420, "ts_iso": "2026-03-20T19:46:18", "type": "kill", "killer": "TeSeS", "victim": "Aleksib", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774035992154, "ts_iso": "2026-03-20T19:46:32", "type": "scoreboard", "event": "score_change", "round": 7, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 5, "team2": "Falcons", "team2_score": 2, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 0, "ct_alive": 3}
+{"ts_ms": 1774035992154, "ts_iso": "2026-03-20T19:46:32", "type": "round_end", "ct_score": 2, "t_score": 5, "winner": "CT", "win_type": "Bomb_Defused"}
+{"ts_ms": 1774036051258, "ts_iso": "2026-03-20T19:47:31", "type": "scoreboard", "event": "round_update", "round": 8, "map": "de_dust2", "team1": "Natus Vincere", "team1_score": 5, "team2": "Falcons", "team2_score": 2, "t_side": "Natus Vincere", "ct_side": "Falcons", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774036124818, "ts_iso": "2026-03-20T19:48:44", "type": "kill", "killer": "NiKo", "victim": "Aleksib", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774036125834, "ts_iso": "2026-03-20T19:48:45", "type": "kill", "killer": "b1t", "victim": "NiKo", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774036135965, "ts_iso": "2026-03-20T19:48:55", "type": "kill", "killer": "TeSeS", "victim": "b1t", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774036142051, "ts_iso": "2026-03-20T19:49:02", "type": "kill", "killer": "makazze", "victim": "kyxsan", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774036142052, "ts_iso": "2026-03-20T19:49:02", "type": "kill", "killer": "w0nderful", "victim": "TeSeS", "weapon": "awp", "headshot": false}
+{"ts_ms": 1774036149138, "ts_iso": "2026-03-20T19:49:09", "type": "kill", "killer": "makazze", "victim": "kyousuke", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774036153692, "ts_iso": "2026-03-20T19:49:13", "type": "bomb_planted"}
+{"ts_ms": 1774037856264, "ts_iso": "2026-03-20T20:17:36", "type": "scoreboard", "event": "score_change", "round": 19, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 9, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 2, "ct_alive": 3}
+{"ts_ms": 1774037856265, "ts_iso": "2026-03-20T20:17:36", "type": "kill", "killer": "Aleksib", "victim": "m0NESY", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774037856269, "ts_iso": "2026-03-20T20:17:36", "type": "kill", "killer": "makazze", "victim": "TeSeS", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774037856272, "ts_iso": "2026-03-20T20:17:36", "type": "scoreboard", "event": "score_change", "round": 19, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 10, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 0, "ct_alive": 3}
+{"ts_ms": 1774037856272, "ts_iso": "2026-03-20T20:17:36", "type": "round_end", "ct_score": 10, "t_score": 9, "winner": "CT", "win_type": "CTs_Win"}
+{"ts_ms": 1774037875110, "ts_iso": "2026-03-20T20:17:55", "type": "scoreboard", "event": "round_update", "round": 20, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 10, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774037899087, "ts_iso": "2026-03-20T20:18:19", "type": "kill", "killer": "makazze", "victim": "TeSeS", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774037903150, "ts_iso": "2026-03-20T20:18:23", "type": "kill", "killer": "b1t", "victim": "kyousuke", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774037903659, "ts_iso": "2026-03-20T20:18:23", "type": "kill", "killer": "NiKo", "victim": "makazze", "weapon": "deagle", "headshot": true}
+{"ts_ms": 1774037906195, "ts_iso": "2026-03-20T20:18:26", "type": "kill", "killer": "b1t", "victim": "kyxsan", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774037907209, "ts_iso": "2026-03-20T20:18:27", "type": "kill", "killer": "m0NESY", "victim": "b1t", "weapon": "p250", "headshot": true}
+{"ts_ms": 1774037916399, "ts_iso": "2026-03-20T20:18:36", "type": "bomb_planted"}
+{"ts_ms": 1774037939731, "ts_iso": "2026-03-20T20:18:59", "type": "kill", "killer": "w0nderful", "victim": "m0NESY", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774037942792, "ts_iso": "2026-03-20T20:19:02", "type": "kill", "killer": "iM", "victim": "NiKo", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774037948372, "ts_iso": "2026-03-20T20:19:08", "type": "scoreboard", "event": "score_change", "round": 20, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 11, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 0, "ct_alive": 3}
+{"ts_ms": 1774037948372, "ts_iso": "2026-03-20T20:19:08", "type": "round_end", "ct_score": 11, "t_score": 9, "winner": "CT", "win_type": "Bomb_Defused"}
+{"ts_ms": 1774037975807, "ts_iso": "2026-03-20T20:19:35", "type": "scoreboard", "event": "round_update", "round": 21, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 11, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774038000241, "ts_iso": "2026-03-20T20:20:00", "type": "kill", "killer": "makazze", "victim": "kyousuke", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774038021043, "ts_iso": "2026-03-20T20:20:21", "type": "kill", "killer": "makazze", "victim": "m0NESY", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774038025090, "ts_iso": "2026-03-20T20:20:25", "type": "kill", "killer": "iM", "victim": "kyxsan", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774038045411, "ts_iso": "2026-03-20T20:20:45", "type": "kill", "killer": "NiKo", "victim": "makazze", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774038048455, "ts_iso": "2026-03-20T20:20:48", "type": "kill", "killer": "Aleksib", "victim": "NiKo", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774038051507, "ts_iso": "2026-03-20T20:20:51", "type": "kill", "killer": "b1t", "victim": "TeSeS", "weapon": "m4a1_silencer", "headshot": false}
+{"ts_ms": 1774038052018, "ts_iso": "2026-03-20T20:20:52", "type": "scoreboard", "event": "score_change", "round": 21, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 12, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 0, "ct_alive": 4}
+{"ts_ms": 1774038052018, "ts_iso": "2026-03-20T20:20:52", "type": "round_end", "ct_score": 12, "t_score": 9, "winner": "CT", "win_type": "CTs_Win"}
+{"ts_ms": 1774038053038, "ts_iso": "2026-03-20T20:20:53", "type": "kill", "killer": "TeSeS", "victim": "b1t", "weapon": "inferno", "headshot": false}
+{"ts_ms": 1774038078434, "ts_iso": "2026-03-20T20:21:18", "type": "scoreboard", "event": "round_update", "round": 22, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 12, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774038093685, "ts_iso": "2026-03-20T20:21:33", "type": "kill", "killer": "makazze", "victim": "TeSeS", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774038155234, "ts_iso": "2026-03-20T20:22:35", "type": "kill", "killer": "makazze", "victim": "m0NESY", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774038155741, "ts_iso": "2026-03-20T20:22:35", "type": "kill", "killer": "iM", "victim": "NiKo", "weapon": "ak47", "headshot": false}
+{"ts_ms": 1774038158290, "ts_iso": "2026-03-20T20:22:38", "type": "kill", "killer": "Aleksib", "victim": "kyxsan", "weapon": "m4a1_silencer", "headshot": true}
+{"ts_ms": 1774038159812, "ts_iso": "2026-03-20T20:22:39", "type": "kill", "killer": "makazze", "victim": "kyousuke", "weapon": "ak47", "headshot": true}
+{"ts_ms": 1774038160320, "ts_iso": "2026-03-20T20:22:40", "type": "scoreboard", "event": "score_change", "round": 22, "map": "de_dust2", "team1": "Falcons", "team1_score": 9, "team2": "Natus Vincere", "team2_score": 13, "t_side": "Falcons", "ct_side": "Natus Vincere", "bomb_planted": false, "t_alive": 5, "ct_alive": 5}
+{"ts_ms": 1774038160320, "ts_iso": "2026-03-20T20:22:40", "type": "round_end", "ct_score": 13, "t_score": 9, "winner": "CT", "win_type": "CTs_Win"}

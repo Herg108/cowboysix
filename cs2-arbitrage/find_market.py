@@ -124,42 +124,57 @@ def main():
         print("Invalid choice.")
         return
 
-    # Start recording
+    # Ask for HLTV URL
+    print()
+    hltv_url = input("HLTV match URL (or press Enter to skip): ").strip()
+
+    # Use the first selected market's output dir as base for HLTV
+    base_dir = "/".join(selected[0]["output_path"].split("/")[:3])  # data/date/match_name
+
+    # Start Polymarket recorders
+    pids = []
     for r in selected:
-        print(f"\nStarting recorder for {r['map_label'].upper()}: {r['team1_name']} vs {r['team2_name']}")
+        print(f"\nStarting Polymarket recorder for {r['map_label'].upper()}: {r['team1_name']} vs {r['team2_name']}")
         print(f"  Output: {r['output_path']}")
         print(f"  Chart:  {r['output_path']}/live_chart.html")
 
-    if len(selected) == 1:
-        # Run directly in foreground
-        r = selected[0]
-        os.execvp("python3", [
+        pid = os.spawnlp(
+            os.P_NOWAIT, "python3",
             "python3", "live_price_recorder.py",
             "--team1-name", r["team1_name"],
             "--team1-token", r["team1_token"],
             "--team2-name", r["team2_name"],
             "--team2-token", r["team2_token"],
             "--output", r["output_path"],
-        ])
-    else:
-        # Run each in background
-        pids = []
-        for r in selected:
-            pid = os.spawnlp(
-                os.P_NOWAIT, "python3",
-                "python3", "live_price_recorder.py",
-                "--team1-name", r["team1_name"],
-                "--team1-token", r["team1_token"],
-                "--team2-name", r["team2_name"],
-                "--team2-token", r["team2_token"],
-                "--output", r["output_path"],
-            )
-            pids.append((pid, r["map_label"]))
-            print(f"  Started {r['map_label']} recorder (PID: {pid})")
+        )
+        pids.append((pid, f"polymarket-{r['map_label']}"))
+        print(f"  PID: {pid}")
 
-        print(f"\n{len(pids)} recorders running in background.")
-        print("They'll stop automatically when each market resolves.")
-        print("To stop manually: pkill -f live_price_recorder.py")
+    # Start HLTV recorder — writes to base_dir, auto-splits into map1/ map2/ map3/
+    if hltv_url:
+        hltv_output = base_dir
+        print(f"\nStarting HLTV score tracker")
+        print(f"  URL: {hltv_url}")
+        print(f"  Output: {hltv_output}/map1/, map2/, map3/ (auto-split by map)")
+
+        pid = os.spawnlp(
+            os.P_NOWAIT, "python3",
+            "python3", "hltv_live.py",
+            hltv_url,
+            "--output", hltv_output,
+        )
+        pids.append((pid, "hltv"))
+        print(f"  PID: {pid}")
+
+    print(f"\n{'='*60}")
+    print(f"{len(pids)} recorders running:")
+    for pid, label in pids:
+        print(f"  [{pid}] {label}")
+    print(f"\nPolymarket recorders stop automatically when markets resolve.")
+    if hltv_url:
+        print(f"HLTV tracker stops when a team reaches 13 rounds.")
+    print(f"\nTo stop everything: pkill -f live_price_recorder.py; pkill -f hltv_live.py")
+    print(f"To stop Chrome too: pkill -f 'chrome.*remote-debugging'")
 
 
 if __name__ == "__main__":
