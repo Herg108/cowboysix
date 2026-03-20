@@ -72,21 +72,15 @@ async def poll_price(client: httpx.AsyncClient, token_id: str) -> dict | None:
 
 
 def load_hltv_events(chartfile: Path, records: list = None):
-    """Load HLTV events from the parent directory, filtered to the map
-    that overlaps in time with our price data.
+    """Load HLTV events from the same directory as the chart.
 
     Chart is at: data/<date>/<match>/map1/live_chart.html
-    HLTV file is at: data/<date>/<match>/hltv_events.jsonl
-
-    Instead of matching by map number (which breaks if we started recording
-    mid-match), we match by time: find the HLTV map whose events overlap
-    with our price data timestamps.
+    HLTV file is at: data/<date>/<match>/map1/hltv_events.jsonl
     """
-    hltv_file = chartfile.parent.parent / "hltv_events.jsonl"
+    hltv_file = chartfile.parent / "hltv_events.jsonl"
     if not hltv_file.exists():
         return []
 
-    # Read all events
     all_events = []
     with open(hltv_file) as f:
         for line in f:
@@ -97,62 +91,39 @@ def load_hltv_events(chartfile: Path, records: list = None):
     if not all_events:
         return []
 
-    # Get the time range of our price data
-    if records and len(records) > 1:
-        price_start = records[0].get("ts_ms", 0)
-        price_end = records[-1].get("ts_ms", 0)
-    else:
-        # Fallback: read from the market_prices.jsonl in the same folder
-        prices_file = chartfile.parent / "market_prices.jsonl"
-        if prices_file.exists():
-            lines = prices_file.read_text().strip().split("\n")
-            if lines:
-                price_start = json_mod.loads(lines[0]).get("ts_ms", 0)
-                price_end = json_mod.loads(lines[-1]).get("ts_ms", 0)
-            else:
-                price_start = price_end = 0
-        else:
-            price_start = price_end = 0
+    # Scoreboards for resolving CT/T to team names
+    scoreboards = [e for e in all_events if e.get("type") == "scoreboard"]
 
-    # Get round_end events and all events with a map field (for time overlap)
-    maps_all = {}  # map_name -> list of all events with that map
-    round_ends = []  # all round_end events
-    for e in all_events:
-        map_name = e.get("map")
-        if map_name:
-            if map_name not in maps_all:
-                maps_all[map_name] = []
-            maps_all[map_name].append(e)
-        if e.get("type") == "round_end":
-            round_ends.append(e)
+    def resolve_side(ts, side):
+        """Map 'CT'/'TERRORIST' to team name using nearest scoreboard."""
+        for s in scoreboards:
+            if abs(s["ts_ms"] - ts) < 10000:
+                if side == "CT":
+                    return s.get("ct_side", "?")
+                else:
+                    return s.get("t_side", "?")
+        return "?"
 
-    # Find the map with the most time overlap with our price data
-    best_map = None
-    best_overlap = 0
-    for map_name, evts in maps_all.items():
-        map_start = evts[0].get("ts_ms", 0)
-        map_end = evts[-1].get("ts_ms", 0)
-        overlap_start = max(price_start, map_start)
-        overlap_end = min(price_end, map_end)
-        overlap = max(0, overlap_end - overlap_start)
-        if overlap > best_overlap:
-            best_overlap = overlap
-            best_map = map_name
-
-    if best_map is None:
-        return []
-
-    # Get time range of the best map to filter round_ends
-    map_evts = maps_all[best_map]
-    map_start = map_evts[0].get("ts_ms", 0)
-    map_end = map_evts[-1].get("ts_ms", 0)
-
-    # Return round_end events within the map's time range
     events = []
-    for e in round_ends:
+    for e in all_events:
+        etype = e.get("type", "")
         ts = e.get("ts_ms", 0)
-        if map_start <= ts <= map_end:
+
+        if etype == "round_end":
+            e["winner_team"] = resolve_side(ts, e.get("winner", ""))
             events.append(e)
+        elif etype == "round_start":
+            events.append(e)
+        elif etype == "scoreboard" and e.get("event") == "round_update":
+            # Round number changed but score didn't — this is a round start
+            e["type"] = "round_start"
+            events.append(e)
+        elif etype == "kill" and e.get("first_kill"):
+            # Use killer_team directly if available, fall back to resolve_side
+            if not e.get("killer_team") or e["killer_team"] == "?":
+                e["killer_team"] = resolve_side(ts, e.get("killer_side", ""))
+            events.append(e)
+
     return events
 
 
@@ -174,47 +145,68 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
     score_status = ""
 
     if hltv_events:
-        last_ev = hltv_events[-1]
-        ct_s = last_ev.get("ct_score", 0)
-        t_s = last_ev.get("t_score", 0)
-        score_status = f" | Round ends: {len(hltv_events)}"
+        round_ends = [e for e in hltv_events if e["type"] == "round_end"]
+        first_kills = [e for e in hltv_events if e["type"] == "kill"]
+        round_starts = [e for e in hltv_events if e["type"] == "round_start"]
+        score_status = f" | Events: {len(round_ends)} rounds, {len(first_kills)} first kills"
 
-        # Build vertical lines, score annotations, and marker points on the price curve
+        def is_team1(name):
+            return (name.lower() in team1_name.lower()) or (team1_name.lower() in name.lower())
+
+        def find_price(ts):
+            for r in records:
+                if r["ts_iso"] >= ts:
+                    return r.get(f"{t1}_mid")
+            return None
+
         shapes = []
         annotations = []
-        marker_x = []
-        marker_y = []
-        marker_text = []
-        for ev in hltv_events:
+
+        # Round end markers
+        re_x, re_y, re_text, re_colors = [], [], [], []
+        for ev in round_ends:
             ts = ev.get("ts_iso", "")
             ct_score = ev.get("ct_score", 0)
             t_score = ev.get("t_score", 0)
-            winner = ev.get("winner", "?")
+            winner_team = ev.get("winner_team", "?")
             win_type = ev.get("win_type", "?").replace("_", " ")
+            t1_win = is_team1(winner_team)
+            color = "rgba(0,255,100,0.4)" if t1_win else "rgba(255,60,60,0.4)"
+            mc = "#00ff64" if t1_win else "#ff3c3c"
 
-            # Vertical line
-            shapes.append(f"""{{
-                type: 'line', x0: '{ts}', x1: '{ts}', y0: 0, y1: 1,
-                line: {{color: 'rgba(255,255,0,0.3)', width: 1, dash: 'dot'}}
-            }}""")
+            shapes.append(f"""{{type:'line',x0:'{ts}',x1:'{ts}',y0:0,y1:1,line:{{color:'{color}',width:1,dash:'dot'}}}}""")
+            annotations.append(f"""{{x:'{ts}',y:1.03,xref:'x',yref:'y',text:'{ct_score}-{t_score}',showarrow:false,font:{{color:'{mc}',size:10}}}}""")
 
-            # Score label at top
-            annotations.append(f"""{{
-                x: '{ts}', y: 1.03, xref: 'x', yref: 'y',
-                text: '{ct_score}-{t_score}', showarrow: false,
-                font: {{color: '#ffdd57', size: 10}}
-            }}""")
+            price = find_price(ts)
+            if price is not None:
+                re_x.append(ts); re_y.append(price)
+                re_text.append(f"{winner_team} wins<br>CT {ct_score}-{t_score} T<br>{win_type}")
+                re_colors.append(mc)
 
-            # Find the price at this timestamp to place marker on the line
-            price_at_ts = None
-            for r in records:
-                if r["ts_iso"] >= ts:
-                    price_at_ts = r.get(f"{t1}_mid")
-                    break
-            if price_at_ts is not None:
-                marker_x.append(ts)
-                marker_y.append(price_at_ts)
-                marker_text.append(f"R end: CT {ct_score}-{t_score} T<br>{win_type}")
+        # Round start markers
+        rs_x, rs_y = [], []
+        for ev in round_starts:
+            ts = ev.get("ts_iso", "")
+            price = find_price(ts)
+            if price is not None:
+                rs_x.append(ts); rs_y.append(price)
+                shapes.append(f"""{{type:'line',x0:'{ts}',x1:'{ts}',y0:0,y1:1,line:{{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}}}}""")
+
+        # First kill markers
+        fk_x, fk_y, fk_text, fk_colors = [], [], [], []
+        for ev in first_kills:
+            ts = ev.get("ts_iso", "")
+            killer = ev.get("killer", "?")
+            victim = ev.get("victim", "?")
+            weapon = ev.get("weapon", "?")
+            hs = " (HS)" if ev.get("headshot") else ""
+            killer_team = ev.get("killer_team", "?")
+            t1_kill = is_team1(killer_team)
+            price = find_price(ts)
+            if price is not None:
+                fk_x.append(ts); fk_y.append(price)
+                fk_text.append(f"First Kill: {killer} → {victim}<br>{weapon}{hs}")
+                fk_colors.append("#00ff64" if t1_kill else "#ff3c3c")
 
         shapes_str = ",\n".join(shapes)
         annots_str = ",\n".join(annotations)
@@ -222,7 +214,8 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
 
     html = f"""<!DOCTYPE html>
 <html><head>
-<title>{team1_name} vs {team2_name} — Live</title>
+<title>{team1_name} vs {team2_name} - Live</title>
+
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
   body {{ background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }}
@@ -231,20 +224,22 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
   #chart {{ width: 100%; height: 80vh; }}
 </style>
 </head><body>
-<h1>{team1_name} vs {team2_name} — Live Prices</h1>
+<h1>{team1_name} vs {team2_name} - Live Prices</h1>
 <div class="info">{len(records)} pts | {timestamps[-1]} UTC | {team1_name}: {last_t1*100:.1f}% | {team2_name}: {last_t2*100:.1f}%{score_status} | <b>Reload to refresh</b></div>
 <div id="chart"></div>
 <script>
 Plotly.newPlot('chart', [
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_mid)}, name: '{team1_name}', line: {{color: '#e94560', width: 2}}}},
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t2_mid)}, name: '{team2_name}', line: {{color: '#0f3460', width: 2}}}},
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_bid)}, name: 'Bid', line: {{color: '#e94560', width: 1, dash: 'dot'}}, showlegend: false}},
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_ask)}, name: 'Ask', line: {{color: '#e94560', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(233,69,96,0.1)', showlegend: false}},
-  {{x: {json_mod.dumps(marker_x if hltv_events else [])}, y: {json_mod.dumps(marker_y if hltv_events else [])}, text: {json_mod.dumps(marker_text if hltv_events else [])}, name: 'Round End', mode: 'markers', marker: {{color: '#ffdd57', size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}}
+  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_mid)}, name: '{team1_name}', line: {{color: '#00d4ff', width: 2}}}},
+  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t2_mid)}, name: '{team2_name}', line: {{color: '#ff9f43', width: 2}}}},
+  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_bid)}, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, showlegend: false}},
+  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_ask)}, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false}},
+  {{x: {json_mod.dumps(re_x if hltv_events else [])}, y: {json_mod.dumps(re_y if hltv_events else [])}, text: {json_mod.dumps(re_text if hltv_events else [])}, name: 'Round End', mode: 'markers', marker: {{color: {json_mod.dumps(re_colors if hltv_events else [])}, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}},
+  {{x: {json_mod.dumps(rs_x if hltv_events else [])}, y: {json_mod.dumps(rs_y if hltv_events else [])}, name: 'Round Start', mode: 'markers', marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}},
+  {{x: {json_mod.dumps(fk_x if hltv_events else [])}, y: {json_mod.dumps(fk_y if hltv_events else [])}, text: {json_mod.dumps(fk_text if hltv_events else [])}, name: 'First Kill', mode: 'markers', marker: {{color: {json_mod.dumps(fk_colors if hltv_events else [])}, size: 7, symbol: 'x'}}, hovertemplate: '%{{text}}<extra></extra>'}},
 ], {{
   paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
-  xaxis: {{title: 'Time (UTC)', gridcolor: '#333'}},
-  yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.05], tickformat: '.0%'}},
+  xaxis: {{title: 'Time (UTC)', gridcolor: '#333', range: ['{timestamps[0]}', '{timestamps[-1]}']}},
+  yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'}},
   legend: {{x: 0.01, y: 0.99}}, hovermode: 'x unified', margin: {{t: 40, b: 80}},
   {score_markers_js}
 }}, {{responsive: true}});
@@ -292,7 +287,11 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
             )
 
             # Track consecutive N/A streak
-            if t1_raw is None and t2_raw is None:
+            # Note: poll_price returns a dict with mid=None when book is empty,
+            # not None itself. Check the mid value.
+            t1_is_na = t1_raw is None or (t1_raw and t1_raw.get("mid") is None)
+            t2_is_na = t2_raw is None or (t2_raw and t2_raw.get("mid") is None)
+            if t1_is_na and t2_is_na:
                 if na_streak_start is None:
                     na_streak_start = time.time()
                 elif time.time() - na_streak_start >= NA_TIMEOUT:
@@ -328,13 +327,15 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
             all_records.append(entry)
 
             # Regenerate HTML chart every 10 ticks (~5 seconds)
-            if tick % 3 == 0 and len(all_records) > 1:
+            if len(all_records) > 1:
                 write_chart(chartfile, all_records, team1_name, team2_name)
 
             tick += 1
             if tick % 5 == 0:
-                t1_str = f"{t1_mid:.3f}" if t1_mid is not None else "N/A"
-                t2_str = f"{t2_mid:.3f}" if t2_mid is not None else "N/A"
+                t1_val = t1_data["mid"] if t1_data else None
+                t2_val = t2_data["mid"] if t2_data else None
+                t1_str = f"{t1_val:.3f}" if t1_val is not None else "N/A"
+                t2_str = f"{t2_val:.3f}" if t2_val is not None else "N/A"
                 print(f"[{entry['ts_iso']}] {team1_name}: {t1_str}  |  {team2_name}: {t2_str}")
 
             await asyncio.sleep(POLL_INTERVAL)

@@ -157,11 +157,14 @@ def main():
         print(f"  URL: {hltv_url}")
         print(f"  Output: {hltv_output}/map1/, map2/, map3/ (auto-split by map)")
 
+        # Figure out the starting map number from the first selected market
+        start_map = int(selected[0]["map_label"].replace("map", ""))
         pid = os.spawnlp(
             os.P_NOWAIT, "python3",
             "python3", "hltv_live.py",
             hltv_url,
             "--output", hltv_output,
+            "--start-map", str(start_map),
         )
         pids.append((pid, "hltv"))
         print(f"  PID: {pid}")
