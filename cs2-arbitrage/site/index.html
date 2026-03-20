@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS2 Market Monitor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+        }
+        .header {
+            padding: 2rem 2rem 1rem;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #fff;
+        }
+        .header p {
+            color: #888;
+            margin-top: 0.3rem;
+            font-size: 0.9rem;
+        }
+        .nav {
+            display: flex;
+            gap: 1.5rem;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #1a1a2e;
+            font-size: 0.85rem;
+        }
+        .nav a {
+            color: #888;
+            text-decoration: none;
+            padding-bottom: 0.5rem;
+        }
+        .nav a.active {
+            color: #4fc3f7;
+            border-bottom: 2px solid #4fc3f7;
+        }
+        .nav a:hover { color: #ccc; }
+        .content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .match-card {
+            background: #12121f;
+            border: 1px solid #1a1a2e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .match-card h2 {
+            font-size: 1.1rem;
+            margin-bottom: 0.3rem;
+        }
+        .match-meta {
+            color: #666;
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .match-meta span {
+            margin-right: 1rem;
+        }
+        .tag {
+            display: inline-block;
+            background: #1a2a1a;
+            color: #4caf50;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .tag.resolved {
+            background: #1a1a2e;
+            color: #888;
+        }
+        .stats-row {
+            display: flex;
+            gap: 2rem;
+            margin: 1rem 0;
+        }
+        .stat {
+            display: flex;
+            flex-direction: column;
+        }
+        .stat-label {
+            font-size: 0.7rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #fff;
+        }
+        .chart-container {
+            width: 100%;
+            margin-top: 1rem;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #1a1a2e;
+        }
+        .chart-container iframe {
+            width: 100%;
+            height: 700px;
+            border: none;
+            background: #fff;
+        }
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #444;
+            font-size: 0.75rem;
+            border-top: 1px solid #1a1a2e;
+            margin-top: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CS2 Market Monitor</h1>
+        <p>Tracking prediction market prices during live Counter-Strike 2 matches</p>
+    </div>
+    <div class="nav">
+        <a href="#" class="active">Matches</a>
+        <a href="#">Analysis</a>
+        <a href="#">About</a>
+    </div>
+    <div class="content">
+        <div class="match-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <h2>FURIA vs TYLOO</h2>
+                    <div class="match-meta">
+                        <span>BLAST Open Rotterdam Group A</span>
+                        <span>BO3</span>
+                        <span>March 18, 2026</span>
+                    </div>
+                </div>
+                <span class="tag resolved">RESOLVED &mdash; FURIA 2-0</span>
+            </div>
+            <div class="stats-row">
+                <div class="stat">
+                    <span class="stat-label">Total Volume</span>
+                    <span class="stat-value">$940,030</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Markets Tracked</span>
+                    <span class="stat-value">3</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Price Points</span>
+                    <span class="stat-value">4,838</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Pre-match Odds</span>
+                    <span class="stat-value">FURIA 82.5%</span>
+                </div>
+            </div>
+            <div class="chart-container">
+                <iframe src="furia_tyloo_chart.html"></iframe>
+            </div>
+        </div>
+    </div>
+    <div class="footer">
+        Data sourced from Polymarket. Charts update after match resolution.
+    </div>
+</body>
+</html>
