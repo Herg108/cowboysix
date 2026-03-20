@@ -1,0 +1,9 @@
+{"type":"round_end_detected","ts_ms":1773968144416,"round":1,"score":"1-0","winner":"team1","market_price_at_detection":0.0}
+{"type":"price_reaction","round":1,"hltv_ts_ms":1773968144416,"reaction_ts_ms":1773968148329,"delay_ms":3913,"price_before":0.0,"price_after":0.589071296816441,"price_delta":0.589071296816441,"timed_out":false}
+{"type":"round_end_detected","ts_ms":1773968150772,"round":2,"score":"1-1","winner":"team2","market_price_at_detection":0.589071296816441}
+{"type":"price_reaction","round":2,"hltv_ts_ms":1773968150772,"reaction_ts_ms":1773968151910,"delay_ms":1138,"price_before":0.589071296816441,"price_after":0.5773659134297998,"price_delta":0.011705383386641177,"timed_out":false}
+{"type":"round_end_detected","ts_ms":1773968153987,"round":3,"score":"2-1","winner":"team1","market_price_at_detection":0.5773659134297998}
+{"type":"price_reaction","round":3,"hltv_ts_ms":1773968153987,"reaction_ts_ms":1773968159742,"delay_ms":5755,"price_before":0.5773659134297998,"price_after":0.6042360376321857,"price_delta":0.02687012420238588,"timed_out":false}
+{"type":"round_end_detected","ts_ms":1773968161450,"round":4,"score":"3-1","winner":"team1","market_price_at_detection":0.6042360376321857}
+{"type":"price_reaction","round":4,"hltv_ts_ms":1773968161450,"reaction_ts_ms":1773968162615,"delay_ms":1165,"price_before":0.6042360376321857,"price_after":0.616816233006382,"price_delta":0.012580195374196301,"timed_out":false}
+{"type":"round_end_detected","ts_ms":1773968166036,"round":5,"score":"3-2","winner":"team2","market_price_at_detection":0.616816233006382}
