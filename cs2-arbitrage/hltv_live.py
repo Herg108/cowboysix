@@ -29,24 +29,33 @@ def append_jsonl(filepath: Path, obj: dict):
 
 
 class HLTVTracker:
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str, start_map: int = 1):
         self.out = Path(output_dir)
         self.out.mkdir(parents=True, exist_ok=True)
-        self.logfile = self.out / "hltv_events.jsonl"
 
         self.current_map = None
+        self.map_count = start_map - 1  # will be incremented on first map detection
+        self.logfile = None  # set when first map detected
         self.last_score = None
         self.last_round = None
         self.team1_name = None
-        self.maps_finished = 0
+        self.round_has_first_kill = False
+        self.ct_players = set()
+        self.t_players = set()
 
     def _on_new_map(self, map_name: str):
         """Reset per-map state when a new map starts."""
         if map_name != self.current_map:
+            self.map_count += 1
+            map_dir = self.out / f"map{self.map_count}"
+            map_dir.mkdir(parents=True, exist_ok=True)
+            self.logfile = map_dir / "hltv_events.jsonl"
             if self.current_map is not None:
                 print(f"\n{'='*60}")
-                print(f"New map detected: {map_name}")
+                print(f"New map detected: {map_name} -> map{self.map_count}/")
                 print(f"{'='*60}\n")
+            else:
+                print(f"Map: {map_name} -> map{self.map_count}/")
             self.current_map = map_name
             self.last_score = None
             self.last_round = None
@@ -105,9 +114,19 @@ class HLTVTracker:
             t1_name, t1_score = ct_name, ct_score
             t2_name, t2_score = t_name, t_score
 
+        # Track player rosters and team names for kill attribution
+        self.ct_players = set(p.get("nick", p.get("name", "")) for p in data.get("CT", []))
+        self.t_players = set(p.get("nick", p.get("name", "")) for p in data.get("TERRORIST", []))
+        self.ct_team_name = ct_name
+        self.t_team_name = t_name
+
         current_score = (t1_score, t2_score)
         score_changed = current_score != self.last_score
         round_changed = current_round != self.last_round
+
+        # Reset first kill flag when round changes
+        if round_changed:
+            self.round_has_first_kill = False
 
         if score_changed or round_changed:
             t_alive = sum(1 for p in data.get("TERRORIST", []) if p.get("alive", False))
@@ -143,11 +162,26 @@ class HLTVTracker:
                 f"({map_name}) {alive} {status}"
             )
 
-            # Detect map end — stop everything
-            if t1_score >= 13 or t2_score >= 13:
-                winner = t1_name if t1_score > t2_score else t2_name
-                print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score}!")
-                return "stop"
+            # Detect map end
+            # Regulation: first to 13 wins, unless both reach 12 → overtime
+            # Overtime: MR3 (6 round blocks). Map ends when someone is
+            # ahead at the end of an OT block (total rounds = 30, 36, 42...)
+            total = t1_score + t2_score
+            in_overtime = total > 24  # both reached 12
+            if not in_overtime:
+                # Regulation — first to 13
+                if t1_score >= 13 or t2_score >= 13:
+                    winner = t1_name if t1_score > t2_score else t2_name
+                    print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score}!")
+                    return "stop"
+            else:
+                # Overtime — map ends at end of OT block if someone leads
+                # OT blocks end at total rounds 30, 36, 42...
+                ot_rounds = total - 24
+                if ot_rounds > 0 and ot_rounds % 6 == 0 and t1_score != t2_score:
+                    winner = t1_name if t1_score > t2_score else t2_name
+                    print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score} (OT)!")
+                    return "stop"
 
         return None
 
@@ -158,7 +192,17 @@ class HLTVTracker:
         log_entries = data.get("log", [])
 
         for log_entry in log_entries:
-            if "RoundEnd" in log_entry:
+            if "RoundStarted" in log_entry or "RoundStart" in log_entry:
+                self.round_has_first_kill = False
+                entry = {
+                    "ts_ms": ts_ms,
+                    "ts_iso": ts_iso,
+                    "type": "round_start",
+                }
+                append_jsonl(self.logfile, entry)
+                print(f"[{ts_iso}] ROUND START")
+
+            elif "RoundEnd" in log_entry:
                 re = log_entry["RoundEnd"]
                 entry = {
                     "ts_ms": ts_ms,
@@ -174,16 +218,36 @@ class HLTVTracker:
 
             elif "Kill" in log_entry:
                 kill = log_entry["Kill"]
+                killer_name = kill.get("killerName", "")
+                is_first_kill = not self.round_has_first_kill
+                self.round_has_first_kill = True
+
+                # Determine killer's team
+                if killer_name in self.ct_players:
+                    killer_side = "CT"
+                    killer_team = getattr(self, 'ct_team_name', '?')
+                elif killer_name in self.t_players:
+                    killer_side = "TERRORIST"
+                    killer_team = getattr(self, 't_team_name', '?')
+                else:
+                    killer_side = "?"
+                    killer_team = "?"
+
                 entry = {
                     "ts_ms": ts_ms,
                     "ts_iso": ts_iso,
                     "type": "kill",
-                    "killer": kill.get("killerName"),
+                    "killer": killer_name,
+                    "killer_side": killer_side,
+                    "killer_team": killer_team,
                     "victim": kill.get("victimName"),
                     "weapon": kill.get("weapon"),
                     "headshot": kill.get("headShot", False),
+                    "first_kill": is_first_kill,
                 }
                 append_jsonl(self.logfile, entry)
+                if is_first_kill:
+                    print(f"[{ts_iso}] FIRST KILL: {killer_name} ({killer_side})")
 
             elif "BombPlanted" in log_entry:
                 entry = {
@@ -200,10 +264,11 @@ def main():
     parser = argparse.ArgumentParser(description="Live HLTV score tracker")
     parser.add_argument("url", help="HLTV match URL")
     parser.add_argument("--output", required=True, help="Base output directory (e.g. data/2026-03-20/falcons_vs_navi)")
+    parser.add_argument("--start-map", type=int, default=1, help="Starting map number (e.g. 2 if joining mid-series)")
     parser.add_argument("--interval", type=float, default=0.5, help="Poll interval in seconds")
     args = parser.parse_args()
 
-    tracker = HLTVTracker(args.output)
+    tracker = HLTVTracker(args.output, start_map=args.start_map)
 
     print(f"Opening HLTV: {args.url}")
     print(f"Base output: {args.output}")
