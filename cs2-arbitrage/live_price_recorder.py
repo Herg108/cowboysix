@@ -118,7 +118,7 @@ def load_hltv_events(chartfile: Path, records: list = None):
             # Round number changed but score didn't — this is a round start
             e["type"] = "round_start"
             events.append(e)
-        elif etype == "kill" and e.get("first_kill"):
+        elif etype == "kill":
             # Use killer_team directly if available, fall back to resolve_side
             if not e.get("killer_team") or e["killer_team"] == "?":
                 e["killer_team"] = resolve_side(ts, e.get("killer_side", ""))
@@ -146,9 +146,10 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
 
     if hltv_events:
         round_ends = [e for e in hltv_events if e["type"] == "round_end"]
-        first_kills = [e for e in hltv_events if e["type"] == "kill"]
+        first_kills = [e for e in hltv_events if e["type"] == "kill" and e.get("first_kill")]
+        all_kills = [e for e in hltv_events if e["type"] == "kill" and not e.get("first_kill")]
         round_starts = [e for e in hltv_events if e["type"] == "round_start"]
-        score_status = f" | Events: {len(round_ends)} rounds, {len(first_kills)} first kills"
+        score_status = f" | Events: {len(round_ends)} rounds, {len(all_kills) + len(first_kills)} kills"
 
         def is_team1(name):
             return (name.lower() in team1_name.lower()) or (team1_name.lower() in name.lower())
@@ -192,6 +193,22 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
                 rs_x.append(ts); rs_y.append(price)
                 shapes.append(f"""{{type:'line',x0:'{ts}',x1:'{ts}',y0:0,y1:1,line:{{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}}}}""")
 
+        # Regular kill markers
+        k_x, k_y, k_text, k_colors = [], [], [], []
+        for ev in all_kills:
+            ts = ev.get("ts_iso", "")
+            killer = ev.get("killer", "?")
+            victim = ev.get("victim", "?")
+            weapon = ev.get("weapon", "?")
+            hs = " (HS)" if ev.get("headshot") else ""
+            killer_team = ev.get("killer_team", "?")
+            t1_kill = is_team1(killer_team)
+            price = find_price(ts)
+            if price is not None:
+                k_x.append(ts); k_y.append(price)
+                k_text.append(f"{killer} → {victim}<br>{weapon}{hs}")
+                k_colors.append("#00ff64" if t1_kill else "#ff3c3c")
+
         # First kill markers
         fk_x, fk_y, fk_text, fk_colors = [], [], [], []
         for ev in first_kills:
@@ -224,7 +241,7 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
   #chart {{ width: 100%; height: 80vh; }}
 </style>
 </head><body>
-<h1>{team1_name} vs {team2_name} - Live Prices</h1>
+<h1>{team1_name} vs {team2_name}</h1>
 <div class="info">{len(records)} pts | {timestamps[-1]} UTC | {team1_name}: {last_t1*100:.1f}% | {team2_name}: {last_t2*100:.1f}%{score_status} | <b>Reload to refresh</b></div>
 <div id="chart"></div>
 <script>
@@ -235,12 +252,13 @@ Plotly.newPlot('chart', [
   {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_ask)}, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false}},
   {{x: {json_mod.dumps(re_x if hltv_events else [])}, y: {json_mod.dumps(re_y if hltv_events else [])}, text: {json_mod.dumps(re_text if hltv_events else [])}, name: 'Round End', mode: 'markers', marker: {{color: {json_mod.dumps(re_colors if hltv_events else [])}, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}},
   {{x: {json_mod.dumps(rs_x if hltv_events else [])}, y: {json_mod.dumps(rs_y if hltv_events else [])}, name: 'Round Start', mode: 'markers', marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}},
-  {{x: {json_mod.dumps(fk_x if hltv_events else [])}, y: {json_mod.dumps(fk_y if hltv_events else [])}, text: {json_mod.dumps(fk_text if hltv_events else [])}, name: 'First Kill', mode: 'markers', marker: {{color: {json_mod.dumps(fk_colors if hltv_events else [])}, size: 7, symbol: 'x'}}, hovertemplate: '%{{text}}<extra></extra>'}},
+  {{x: {json_mod.dumps(k_x if hltv_events else [])}, y: {json_mod.dumps(k_y if hltv_events else [])}, text: {json_mod.dumps(k_text if hltv_events else [])}, name: 'Kill', mode: 'markers', marker: {{color: {json_mod.dumps(k_colors if hltv_events else [])}, size: 5, symbol: 'circle', opacity: 0.6}}, hovertemplate: '%{{text}}<extra></extra>'}},
+  {{x: {json_mod.dumps(fk_x if hltv_events else [])}, y: {json_mod.dumps(fk_y if hltv_events else [])}, text: {json_mod.dumps(fk_text if hltv_events else [])}, name: 'First Kill', mode: 'markers', marker: {{color: {json_mod.dumps(fk_colors if hltv_events else [])}, size: 8, symbol: 'x', line: {{width: 2}}}}, hovertemplate: '%{{text}}<extra></extra>'}},
 ], {{
   paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
   xaxis: {{title: 'Time (UTC)', gridcolor: '#333', range: ['{timestamps[0]}', '{timestamps[-1]}']}},
   yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'}},
-  legend: {{x: 0.01, y: 0.99}}, hovermode: 'x unified', margin: {{t: 40, b: 80}},
+  showlegend: false, hovermode: 'x unified', margin: {{t: 40, b: 80}},
   {score_markers_js}
 }}, {{responsive: true}});
 </script>
@@ -277,9 +295,24 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
     last_t2 = None
     na_streak_start = None  # track consecutive N/A responses
     NA_TIMEOUT = 30  # seconds of consecutive N/A before auto-stop
+    recording = False  # wait for HLTV activity before recording
+    hltv_file = chartfile.parent / "hltv_events.jsonl"
+    print("Waiting for HLTV activity before recording...")
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
             ts_ms = int(time.time() * 1000)
+
+            # Wait for HLTV activity before recording
+            if not recording:
+                if hltv_file.exists() and hltv_file.stat().st_size > 0:
+                    recording = True
+                    print("[GO] HLTV activity detected — recording started!")
+                else:
+                    if tick % 10 == 0:
+                        print(f"[{time.strftime('%H:%M:%S')}] Waiting for HLTV...")
+                    tick += 1
+                    await asyncio.sleep(POLL_INTERVAL)
+                    continue
 
             t1_raw, t2_raw = await asyncio.gather(
                 poll_price(client, team1_token),
