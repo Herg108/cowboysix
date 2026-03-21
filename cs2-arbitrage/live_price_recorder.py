@@ -736,7 +736,7 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
     last_t1 = None  # carry forward last known prices
     last_t2 = None
     na_streak_start = None  # track consecutive N/A responses
-    NA_TIMEOUT = 30  # seconds of consecutive N/A before auto-stop
+    NA_TIMEOUT = 120  # seconds of consecutive N/A before auto-stop
     recording = False  # wait for HLTV activity before recording
     hltv_file = chartfile.parent / "hltv_events.jsonl"
     print("Waiting for HLTV activity before recording...")
@@ -761,33 +761,27 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
                 poll_price(client, team2_token),
             )
 
-            # Check if HLTV says map is done (look for score where someone hit 13+)
+            # Check if HLTV says map is done
             if hltv_file.exists():
                 try:
                     with open(hltv_file) as hf:
-                        last_line = None
+                        latest_score = None
                         for line in hf:
                             if line.strip():
-                                last_line = line
-                        if last_line:
-                            last_evt = json_mod.loads(last_line)
-                            if last_evt.get("type") == "scoreboard" and last_evt.get("event") == "score_change":
-                                s1 = last_evt.get("team1_score", 0)
-                                s2 = last_evt.get("team2_score", 0)
-                                total = s1 + s2
-                                in_ot = total > 24
-                                if not in_ot and (s1 >= 13 or s2 >= 13):
-                                    winner = last_evt.get("team1") if s1 > s2 else last_evt.get("team2")
-                                    print(f"\n[DONE] HLTV says map over: {winner} wins {s1}-{s2}. Stopping.")
-                                    write_static_chart(chartfile, all_records, team1_name, team2_name)
-                                    break
-                                elif in_ot:
-                                    ot_rounds = total - 24
-                                    if ot_rounds > 0 and ot_rounds % 6 == 0 and s1 != s2:
-                                        winner = last_evt.get("team1") if s1 > s2 else last_evt.get("team2")
-                                        print(f"\n[DONE] HLTV says map over: {winner} wins {s1}-{s2} (OT). Stopping.")
-                                        write_static_chart(chartfile, all_records, team1_name, team2_name)
-                                        break
+                                evt = json_mod.loads(line)
+                                if evt.get("type") == "scoreboard" and evt.get("event") == "score_change":
+                                    latest_score = evt
+                        if latest_score:
+                            s1 = latest_score.get("team1_score", 0)
+                            s2 = latest_score.get("team2_score", 0)
+                            # Win targets: 13, 16, 19, 22... (13 + 3*N)
+                            hi = max(s1, s2)
+                            if hi >= 13 and (hi - 13) % 3 == 0 and s1 != s2:
+                                winner = latest_score.get("team1") if s1 > s2 else latest_score.get("team2")
+                                ot_str = " (OT)" if hi > 13 else ""
+                                print(f"\n[DONE] HLTV says map over: {winner} wins {s1}-{s2}{ot_str}. Stopping.")
+                                write_static_chart(chartfile, all_records, team1_name, team2_name)
+                                break
                 except Exception:
                     pass
 

@@ -163,25 +163,13 @@ class HLTVTracker:
             )
 
             # Detect map end
-            # Regulation: first to 13 wins, unless both reach 12 → overtime
-            # Overtime: MR3 (6 round blocks). Map ends when someone is
-            # ahead at the end of an OT block (total rounds = 30, 36, 42...)
-            total = t1_score + t2_score
-            in_overtime = total > 24  # both reached 12
-            if not in_overtime:
-                # Regulation — first to 13
-                if t1_score >= 13 or t2_score >= 13:
-                    winner = t1_name if t1_score > t2_score else t2_name
-                    print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score}!")
-                    return "stop"
-            else:
-                # Overtime — map ends at end of OT block if someone leads
-                # OT blocks end at total rounds 30, 36, 42...
-                ot_rounds = total - 24
-                if ot_rounds > 0 and ot_rounds % 6 == 0 and t1_score != t2_score:
-                    winner = t1_name if t1_score > t2_score else t2_name
-                    print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score} (OT)!")
-                    return "stop"
+            # Win targets: 13, 16, 19, 22... (13 + 3*N)
+            hi = max(t1_score, t2_score)
+            if hi >= 13 and (hi - 13) % 3 == 0 and t1_score != t2_score:
+                winner = t1_name if t1_score > t2_score else t2_name
+                ot_str = " (OT)" if hi > 13 else ""
+                print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score}{ot_str}!")
+                return "stop"
 
         return None
 
