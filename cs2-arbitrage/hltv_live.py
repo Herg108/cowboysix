@@ -222,13 +222,25 @@ class HLTVTracker:
                 is_first_kill = not self.round_has_first_kill
                 self.round_has_first_kill = True
 
-                # Determine killer's team
-                if killer_name in self.ct_players:
-                    killer_side = "CT"
-                    killer_team = getattr(self, 'ct_team_name', '?')
-                elif killer_name in self.t_players:
+                # Determine victim's team — then kill color is the opposite
+                victim_name = kill.get("victimName", "")
+                if victim_name in self.ct_players:
+                    victim_side = "CT"
+                    victim_team = getattr(self, 'ct_team_name', '?')
+                elif victim_name in self.t_players:
+                    victim_side = "TERRORIST"
+                    victim_team = getattr(self, 't_team_name', '?')
+                else:
+                    victim_side = "?"
+                    victim_team = "?"
+
+                # Killer team = opposite of victim team
+                if victim_team == getattr(self, 'ct_team_name', ''):
                     killer_side = "TERRORIST"
                     killer_team = getattr(self, 't_team_name', '?')
+                elif victim_team == getattr(self, 't_team_name', ''):
+                    killer_side = "CT"
+                    killer_team = getattr(self, 'ct_team_name', '?')
                 else:
                     killer_side = "?"
                     killer_team = "?"
@@ -246,8 +258,9 @@ class HLTVTracker:
                     "first_kill": is_first_kill,
                 }
                 append_jsonl(self.logfile, entry)
-                if is_first_kill:
-                    print(f"[{ts_iso}] FIRST KILL: {killer_name} ({killer_side})")
+                fk_tag = " [FK]" if is_first_kill else ""
+                hs_tag = " (HS)" if kill.get("headShot", False) else ""
+                print(f"[{ts_iso}] KILL: {killer_name} → {kill.get('victimName', '?')} [{kill.get('weapon', '?')}]{hs_tag}{fk_tag}")
 
             elif "BombPlanted" in log_entry:
                 entry = {
