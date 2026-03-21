@@ -13,10 +13,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import signal
 import time
 from pathlib import Path
 
 import json as json_mod
+import threading
+import http.server
+import functools
 
 import httpx
 import orjson
@@ -74,7 +79,8 @@ async def poll_price(client: httpx.AsyncClient, token_id: str) -> dict | None:
 def load_hltv_events(chartfile: Path, records: list = None):
     """Load HLTV events from the same directory as the chart.
 
-    Chart is at: data/<date>/<match>/map1/live_chart.html
+    Live: http://localhost:8888/live.html
+    Static chart: data/<date>/<match>/map1/chart.html
     HLTV file is at: data/<date>/<match>/map1/hltv_events.jsonl
     """
     hltv_file = chartfile.parent / "hltv_events.jsonl"
@@ -127,30 +133,24 @@ def load_hltv_events(chartfile: Path, records: list = None):
     return events
 
 
-def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str):
+def write_data_json(chartfile: Path, records: list, team1_name: str, team2_name: str):
+    """Write live_data.json with all chart data for JS polling."""
     t1 = team1_name.lower()
     t2 = team2_name.lower()
-    timestamps = [r["ts_iso"] for r in records]
-    t1_mid = [r.get(f"{t1}_mid") for r in records]
-    t1_bid = [r.get(f"{t1}_bid") for r in records]
-    t1_ask = [r.get(f"{t1}_ask") for r in records]
-    t2_mid = [r.get(f"{t2}_mid") for r in records]
 
-    last_t1 = next((v for v in reversed(t1_mid) if v is not None), 0)
-    last_t2 = next((v for v in reversed(t2_mid) if v is not None), 0)
+    data = {
+        "team1": team1_name,
+        "team2": team2_name,
+        "ts": [r["ts_iso"] for r in records],
+        "t1_mid": [r.get(f"{t1}_mid") for r in records],
+        "t1_bid": [r.get(f"{t1}_bid") for r in records],
+        "t1_ask": [r.get(f"{t1}_ask") for r in records],
+        "t2_mid": [r.get(f"{t2}_mid") for r in records],
+        "hltv": [],
+    }
 
-    # Load HLTV round events for score markers
     hltv_events = load_hltv_events(chartfile, records)
-    score_markers_js = ""
-    score_status = ""
-
     if hltv_events:
-        round_ends = [e for e in hltv_events if e["type"] == "round_end"]
-        first_kills = [e for e in hltv_events if e["type"] == "kill" and e.get("first_kill")]
-        all_kills = [e for e in hltv_events if e["type"] == "kill" and not e.get("first_kill")]
-        round_starts = [e for e in hltv_events if e["type"] == "round_start"]
-        score_status = f" | Events: {len(round_ends)} rounds, {len(all_kills) + len(first_kills)} kills"
-
         def is_team1(name):
             return (name.lower() in team1_name.lower()) or (team1_name.lower() in name.lower())
 
@@ -160,110 +160,544 @@ def write_chart(chartfile: Path, records: list, team1_name: str, team2_name: str
                     return r.get(f"{t1}_mid")
             return None
 
-        shapes = []
-        annotations = []
-
-        # Round end markers
-        re_x, re_y, re_text, re_colors = [], [], [], []
-        for ev in round_ends:
-            ts = ev.get("ts_iso", "")
-            ct_score = ev.get("ct_score", 0)
-            t_score = ev.get("t_score", 0)
-            winner_team = ev.get("winner_team", "?")
-            win_type = ev.get("win_type", "?").replace("_", " ")
-            t1_win = is_team1(winner_team)
-            color = "rgba(0,255,100,0.4)" if t1_win else "rgba(255,60,60,0.4)"
-            mc = "#00ff64" if t1_win else "#ff3c3c"
-
-            shapes.append(f"""{{type:'line',x0:'{ts}',x1:'{ts}',y0:0,y1:1,line:{{color:'{color}',width:1,dash:'dot'}}}}""")
-            annotations.append(f"""{{x:'{ts}',y:1.03,xref:'x',yref:'y',text:'{ct_score}-{t_score}',showarrow:false,font:{{color:'{mc}',size:10}}}}""")
-
-            price = find_price(ts)
-            if price is not None:
-                re_x.append(ts); re_y.append(price)
-                re_text.append(f"{winner_team} wins<br>CT {ct_score}-{t_score} T<br>{win_type}")
-                re_colors.append(mc)
-
-        # Round start markers
-        rs_x, rs_y = [], []
-        for ev in round_starts:
+        for ev in hltv_events:
+            etype = ev.get("type", "")
             ts = ev.get("ts_iso", "")
             price = find_price(ts)
-            if price is not None:
-                rs_x.append(ts); rs_y.append(price)
-                shapes.append(f"""{{type:'line',x0:'{ts}',x1:'{ts}',y0:0,y1:1,line:{{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}}}}""")
+            if price is None:
+                continue
 
-        # Regular kill markers
-        k_x, k_y, k_text, k_colors = [], [], [], []
-        for ev in all_kills:
-            ts = ev.get("ts_iso", "")
-            killer = ev.get("killer", "?")
-            victim = ev.get("victim", "?")
-            weapon = ev.get("weapon", "?")
-            hs = " (HS)" if ev.get("headshot") else ""
-            killer_team = ev.get("killer_team", "?")
-            t1_kill = is_team1(killer_team)
-            price = find_price(ts)
-            if price is not None:
-                k_x.append(ts); k_y.append(price)
-                k_text.append(f"{killer} → {victim}<br>{weapon}{hs}")
-                k_colors.append("#00ff64" if t1_kill else "#ff3c3c")
+            if etype == "round_end":
+                winner_team = ev.get("winner_team", "?")
+                t1_win = is_team1(winner_team)
+                data["hltv"].append({
+                    "t": ts, "y": price, "type": "round_end",
+                    "t1_win": t1_win,
+                    "ct_score": ev.get("ct_score", 0),
+                    "t_score": ev.get("t_score", 0),
+                    "winner": winner_team,
+                    "win_type": ev.get("win_type", "?"),
+                })
+            elif etype == "round_start":
+                data["hltv"].append({"t": ts, "y": price, "type": "round_start"})
+            elif etype == "kill":
+                victim_team = ev.get("victim_team", ev.get("killer_team", "?"))
+                # Kill color based on victim: if victim is team1, red (bad for team1)
+                # We stored killer_team, so victim is the opposite
+                killer_team = ev.get("killer_team", "?")
+                t1_kill = is_team1(killer_team)
+                data["hltv"].append({
+                    "t": ts, "y": price, "type": "first_kill" if ev.get("first_kill") else "kill",
+                    "t1_kill": t1_kill,
+                    "killer": ev.get("killer", "?"),
+                    "victim": ev.get("victim", "?"),
+                    "weapon": ev.get("weapon", "?"),
+                    "headshot": ev.get("headshot", False),
+                })
 
-        # First kill markers
-        fk_x, fk_y, fk_text, fk_colors = [], [], [], []
-        for ev in first_kills:
-            ts = ev.get("ts_iso", "")
-            killer = ev.get("killer", "?")
-            victim = ev.get("victim", "?")
-            weapon = ev.get("weapon", "?")
-            hs = " (HS)" if ev.get("headshot") else ""
-            killer_team = ev.get("killer_team", "?")
-            t1_kill = is_team1(killer_team)
-            price = find_price(ts)
-            if price is not None:
-                fk_x.append(ts); fk_y.append(price)
-                fk_text.append(f"First Kill: {killer} → {victim}<br>{weapon}{hs}")
-                fk_colors.append("#00ff64" if t1_kill else "#ff3c3c")
+    datafile = chartfile.parent / "live_data.json"
+    datafile.write_text(json_mod.dumps(data))
 
-        shapes_str = ",\n".join(shapes)
-        annots_str = ",\n".join(annotations)
-        score_markers_js = f"shapes: [{shapes_str}],\n  annotations: [{annots_str}],"
 
+def write_chart_html(chartfile: Path, team1_name: str, team2_name: str, port: int = 8888):
+    """Write the HTML shell once. It polls live_data.json via JS."""
     html = f"""<!DOCTYPE html>
 <html><head>
-<title>{team1_name} vs {team2_name} - Live</title>
-
+<title>{team1_name} vs {team2_name}</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
   body {{ background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }}
   h1 {{ text-align: center; color: #e94560; margin-bottom: 5px; }}
   .info {{ text-align: center; color: #999; margin-bottom: 10px; }}
   #chart {{ width: 100%; height: 80vh; }}
+  .status {{ color: #4caf50; }}
 </style>
 </head><body>
 <h1>{team1_name} vs {team2_name}</h1>
-<div class="info">{len(records)} pts | {timestamps[-1]} UTC | {team1_name}: {last_t1*100:.1f}% | {team2_name}: {last_t2*100:.1f}%{score_status} | <b>Reload to refresh</b></div>
+<div class="info" id="info">Loading...</div>
 <div id="chart"></div>
 <script>
-Plotly.newPlot('chart', [
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_mid)}, name: '{team1_name}', line: {{color: '#00d4ff', width: 2}}}},
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t2_mid)}, name: '{team2_name}', line: {{color: '#ff9f43', width: 2}}}},
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_bid)}, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, showlegend: false}},
-  {{x: {json_mod.dumps(timestamps)}, y: {json_mod.dumps(t1_ask)}, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false}},
-  {{x: {json_mod.dumps(re_x if hltv_events else [])}, y: {json_mod.dumps(re_y if hltv_events else [])}, text: {json_mod.dumps(re_text if hltv_events else [])}, name: 'Round End', mode: 'markers', marker: {{color: {json_mod.dumps(re_colors if hltv_events else [])}, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}},
-  {{x: {json_mod.dumps(rs_x if hltv_events else [])}, y: {json_mod.dumps(rs_y if hltv_events else [])}, name: 'Round Start', mode: 'markers', marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}},
-  {{x: {json_mod.dumps(k_x if hltv_events else [])}, y: {json_mod.dumps(k_y if hltv_events else [])}, text: {json_mod.dumps(k_text if hltv_events else [])}, name: 'Kill', mode: 'markers', marker: {{color: {json_mod.dumps(k_colors if hltv_events else [])}, size: 5, symbol: 'circle', opacity: 0.6}}, hovertemplate: '%{{text}}<extra></extra>'}},
-  {{x: {json_mod.dumps(fk_x if hltv_events else [])}, y: {json_mod.dumps(fk_y if hltv_events else [])}, text: {json_mod.dumps(fk_text if hltv_events else [])}, name: 'First Kill', mode: 'markers', marker: {{color: {json_mod.dumps(fk_colors if hltv_events else [])}, size: 8, symbol: 'x', line: {{width: 2}}}}, hovertemplate: '%{{text}}<extra></extra>'}},
-], {{
-  paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
-  xaxis: {{title: 'Time (UTC)', gridcolor: '#333', range: ['{timestamps[0]}', '{timestamps[-1]}']}},
-  yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'}},
-  showlegend: false, hovermode: 'x unified', margin: {{t: 40, b: 80}},
-  {score_markers_js}
-}}, {{responsive: true}});
+const DATA_URL = 'live_data.json';
+let lastLen = 0;
+let chartReady = false;
+let userZoomed = false;
+let savedXRange = null;
+let rightPinned = true;  // right edge follows latest data
+let ignoreRelayout = false;  // guard against our own relayout calls
+
+function buildTraces(d) {{
+  const traces = [
+    {{x: d.ts, y: d.t1_mid, name: d.team1, line: {{color: '#00d4ff', width: 2}}}},
+    {{x: d.ts, y: d.t2_mid, name: d.team2, line: {{color: '#ff9f43', width: 2}}}},
+    {{x: d.ts, y: d.t1_bid, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, showlegend: false}},
+    {{x: d.ts, y: d.t1_ask, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false}},
+  ];
+
+  // HLTV events
+  const re = {{x:[], y:[], text:[], color:[], type: 'round_end'}};
+  const rs = {{x:[], y:[], type: 'round_start'}};
+  const fk = {{x:[], y:[], text:[], color:[], type: 'first_kill'}};
+  const kills = {{x:[], y:[], text:[], color:[], type: 'kill'}};
+  const shapes = [];
+  const annotations = [];
+
+  for (const ev of (d.hltv || [])) {{
+    if (ev.type === 'round_end') {{
+      const mc = ev.t1_win ? '#00ff64' : '#ff3c3c';
+      const bg = ev.t1_win ? 'rgba(0,255,100,0.4)' : 'rgba(255,60,60,0.4)';
+      re.x.push(ev.t); re.y.push(ev.y);
+      re.text.push(ev.winner + ' wins<br>CT ' + ev.ct_score + '-' + ev.t_score + ' T<br>' + ev.win_type.replace(/_/g, ' '));
+      re.color.push(mc);
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:bg,width:1,dash:'dot'}}}});
+      annotations.push({{x:ev.t,y:1.03,xref:'x',yref:'y',text:ev.ct_score+'-'+ev.t_score,showarrow:false,font:{{color:mc,size:10}}}});
+    }} else if (ev.type === 'round_start') {{
+      rs.x.push(ev.t); rs.y.push(ev.y);
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}}}});
+    }} else if (ev.type === 'first_kill') {{
+      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
+      fk.x.push(ev.t); fk.y.push(ev.y);
+      fk.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
+      fk.color.push(mc);
+    }} else if (ev.type === 'kill') {{
+      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
+      kills.x.push(ev.t); kills.y.push(ev.y);
+      kills.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
+      kills.color.push(mc);
+    }}
+  }}
+
+  traces.push({{x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers',
+    marker: {{color: re.color, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers',
+    marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
+  traces.push({{x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers',
+    marker: {{color: kills.color, size: 4, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers',
+    marker: {{color: fk.color, size: 8, symbol: 'x', line: {{color: '#88ddaa', width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
+
+  return {{traces, shapes, annotations}};
+}}
+
+function getLayout(d, shapes, annotations) {{
+  return {{
+    paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
+    xaxis: {{title: 'Time (UTC)', gridcolor: '#333',
+      range: [d.ts[0], d.ts[d.ts.length-1]],
+      rangeslider: {{visible: true, bgcolor: '#1a1a2e', thickness: 0.08,
+        range: [d.ts[0], d.ts[d.ts.length-1]]}}}},
+    yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'}},
+    showlegend: false, hovermode: 'x unified', margin: {{t: 40, b: 80}},
+    shapes: shapes,
+    annotations: annotations,
+  }};
+}}
+
+async function update() {{
+  try {{
+    const resp = await fetch(DATA_URL + '?t=' + Date.now());
+    const d = await resp.json();
+
+    if (d.ts.length === lastLen) return;
+    lastLen = d.ts.length;
+
+    const {{traces, shapes, annotations}} = buildTraces(d);
+    const layout = getLayout(d, shapes, annotations);
+
+    const lastT1 = d.t1_mid.filter(v => v !== null).pop() || 0;
+    const lastT2 = d.t2_mid.filter(v => v !== null).pop() || 0;
+    const rounds = d.hltv.filter(e => e.type === 'round_end').length;
+    const killCount = d.hltv.filter(e => e.type === 'kill' || e.type === 'first_kill').length;
+    document.getElementById('info').innerHTML =
+      d.ts.length + ' pts | ' + d.ts[d.ts.length-1] + ' UTC | ' +
+      d.team1 + ': ' + (lastT1*100).toFixed(1) + '% | ' +
+      d.team2 + ': ' + (lastT2*100).toFixed(1) + '% | ' +
+      rounds + ' rounds, ' + killCount + ' kills | ' +
+      '<span class="status">LIVE</span>';
+
+    if (!chartReady) {{
+      Plotly.newPlot('chart', traces, layout, {{responsive: true}});
+      chartReady = true;
+      // Listen for user zoom/pan events
+      document.getElementById('chart').on('plotly_relayout', function(ed) {{
+        if (ignoreRelayout) return;
+        if (ed['xaxis.range[0]'] !== undefined || ed['xaxis.range'] !== undefined) {{
+          userZoomed = true;
+          const el = document.getElementById('chart');
+          savedXRange = el.layout.xaxis.range.slice();
+          // Check if right edge is near the end of data
+          const lastTs = el.data[0].x[el.data[0].x.length - 1];
+          const rightEdge = savedXRange[1];
+          const diff = new Date(lastTs) - new Date(rightEdge);
+          rightPinned = Math.abs(diff) < 30000;
+        }}
+        if (ed['xaxis.autorange']) {{
+          userZoomed = false;
+          savedXRange = null;
+          rightPinned = true;
+        }}
+      }});
+    }} else {{
+      // Always update rangeslider to full data extent
+      layout.xaxis.rangeslider.range = [d.ts[0], d.ts[d.ts.length-1]];
+
+      if (userZoomed && savedXRange) {{
+        // If right edge was pinned, update it to latest data
+        if (rightPinned) {{
+          savedXRange[1] = d.ts[d.ts.length - 1];
+        }}
+        layout.xaxis.range = savedXRange;
+        layout.xaxis.autorange = false;
+      }}
+      ignoreRelayout = true;
+      Plotly.react('chart', traces, layout);
+
+      // Force rangeslider update via relayout
+      Plotly.relayout('chart', {{
+        'xaxis.rangeslider.range': [d.ts[0], d.ts[d.ts.length-1]]
+      }}).then(() => {{ ignoreRelayout = false; }});
+    }}
+  }} catch(e) {{
+    document.getElementById('info').textContent = 'Waiting for data...';
+  }}
+}}
+
+update();
+setInterval(update, 2000);
 </script>
 </body></html>"""
     chartfile.write_text(html)
+
+
+_live_html_written = False
+
+def write_chart(livefile: Path, records: list, team1_name: str, team2_name: str):
+    """Write live.html shell (once) and live_data.json (every tick)."""
+    global _live_html_written
+    if not _live_html_written:
+        write_chart_html(livefile, team1_name, team2_name)
+        _live_html_written = True
+
+    # Write data JSON every tick (same directory as livefile)
+    write_data_json(livefile, records, team1_name, team2_name)
+
+
+def write_static_chart(chartfile: Path, records: list, team1_name: str, team2_name: str):
+    """Write a self-contained HTML with data embedded inline. For viewing after match ends."""
+    # Build the data object
+    t1 = team1_name.lower()
+    t2 = team2_name.lower()
+
+    data = {
+        "team1": team1_name,
+        "team2": team2_name,
+        "ts": [r["ts_iso"] for r in records],
+        "t1_mid": [r.get(f"{t1}_mid") for r in records],
+        "t1_bid": [r.get(f"{t1}_bid") for r in records],
+        "t1_ask": [r.get(f"{t1}_ask") for r in records],
+        "t2_mid": [r.get(f"{t2}_mid") for r in records],
+        "hltv": [],
+    }
+
+    hltv_events = load_hltv_events(chartfile, records)
+    if hltv_events:
+        def is_team1(name):
+            return (name.lower() in team1_name.lower()) or (team1_name.lower() in name.lower())
+
+        def find_price(ts):
+            for r in records:
+                if r["ts_iso"] >= ts:
+                    return r.get(f"{t1}_mid")
+            return None
+
+        for ev in hltv_events:
+            etype = ev.get("type", "")
+            ts = ev.get("ts_iso", "")
+            price = find_price(ts)
+            if price is None:
+                continue
+
+            if etype == "round_end":
+                winner_team = ev.get("winner_team", "?")
+                t1_win = is_team1(winner_team)
+                data["hltv"].append({
+                    "t": ts, "y": price, "type": "round_end",
+                    "t1_win": t1_win,
+                    "ct_score": ev.get("ct_score", 0),
+                    "t_score": ev.get("t_score", 0),
+                    "winner": winner_team,
+                    "win_type": ev.get("win_type", "?"),
+                })
+            elif etype == "round_start":
+                data["hltv"].append({"t": ts, "y": price, "type": "round_start"})
+            elif etype == "kill":
+                killer_team = ev.get("killer_team", "?")
+                t1_kill = is_team1(killer_team)
+                data["hltv"].append({
+                    "t": ts, "y": price, "type": "first_kill" if ev.get("first_kill") else "kill",
+                    "t1_kill": t1_kill,
+                    "killer": ev.get("killer", "?"),
+                    "victim": ev.get("victim", "?"),
+                    "weapon": ev.get("weapon", "?"),
+                    "headshot": ev.get("headshot", False),
+                })
+
+    data_json = json_mod.dumps(data)
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<title>{team1_name} vs {team2_name}</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  body {{ background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }}
+  h1 {{ text-align: center; color: #e94560; margin-bottom: 5px; }}
+  .info {{ text-align: center; color: #999; margin-bottom: 10px; }}
+  #chart {{ width: 100%; height: 70vh; }}
+  .controls {{ display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; }}
+  .controls button {{
+    background: #16213e; border: 1px solid #333; color: #eee; padding: 6px 14px;
+    border-radius: 4px; cursor: pointer; font-size: 14px;
+  }}
+  .controls button:hover {{ background: #1a2a4e; }}
+  .controls button.active {{ border-color: #00d4ff; color: #00d4ff; }}
+  .round-strip {{
+    display: flex; justify-content: center; gap: 2px; margin-bottom: 10px; flex-wrap: wrap;
+  }}
+  .round-box {{
+    width: 22px; height: 22px; border-radius: 3px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: bold; color: #fff; opacity: 0.7;
+    transition: opacity 0.15s, transform 0.15s;
+  }}
+  .round-box:hover {{ opacity: 1; transform: scale(1.2); }}
+  .round-box.selected {{ opacity: 1; transform: scale(1.3); outline: 2px solid #fff; }}
+  .half-sep {{ width: 8px; }}
+</style>
+</head><body>
+<h1>{team1_name} vs {team2_name}</h1>
+<div class="info" id="info"></div>
+<div class="controls">
+  <button onclick="prevRound()" title="Previous round (Left arrow)">&#9664; Prev</button>
+  <button onclick="showAll()" id="allBtn" class="active">Full Match</button>
+  <button onclick="nextRound()" title="Next round (Right arrow)">Next &#9654;</button>
+</div>
+<div class="round-strip" id="roundStrip"></div>
+<div id="chart"></div>
+<script>
+const d = {data_json};
+
+// Build round boundaries from round_end events
+const roundEnds = (d.hltv || []).filter(e => e.type === 'round_end');
+const roundStarts = (d.hltv || []).filter(e => e.type === 'round_start');
+
+// Map recorded round_ends by actual round number (ct_score + t_score)
+const recordedByRound = {{}};
+for (let i = 0; i < roundEnds.length; i++) {{
+  const re = roundEnds[i];
+  const roundNum = re.ct_score + re.t_score; // score after round = round number
+  recordedByRound[roundNum] = {{ reIdx: i, re: re }};
+}}
+
+// Figure out total rounds from max score
+const maxRound = roundEnds.length > 0 ? Math.max(...Object.keys(recordedByRound).map(Number)) : 0;
+
+// Build full rounds array including missing ones
+const rounds = [];
+for (let rn = 1; rn <= maxRound; rn++) {{
+  const rec = recordedByRound[rn];
+  if (rec) {{
+    const re = rec.re;
+    const reIdx = rec.reIdx;
+    // Find the round start before this round end
+    let startT = null;
+    for (let j = roundStarts.length - 1; j >= 0; j--) {{
+      if (roundStarts[j].t < re.t) {{
+        if (reIdx === 0 || roundStarts[j].t > roundEnds[reIdx-1].t) {{
+          startT = roundStarts[j].t;
+        }}
+        break;
+      }}
+    }}
+    if (!startT) {{
+      startT = reIdx > 0 ? roundEnds[reIdx-1].t : d.ts[0];
+    }}
+    const endIdx = d.ts.findIndex(t => t > re.t);
+    const endT = endIdx >= 0 && endIdx + 10 < d.ts.length ? d.ts[Math.min(endIdx + 10, d.ts.length - 1)] : re.t;
+
+    // Determine who won this round by comparing to previous recorded round
+    let t1_win = re.t1_win;
+
+    rounds.push({{
+      roundNum: rn,
+      missing: false,
+      startT: startT,
+      endT: endT,
+      ct_score: re.ct_score,
+      t_score: re.t_score,
+      t1_win: t1_win,
+      winner: re.winner,
+    }});
+  }} else {{
+    // Missing round — infer winner from surrounding scores
+    // Find the next recorded round to figure out who gained a point
+    let t1_win = null;
+    const prevRec = rounds.length > 0 && !rounds[rounds.length-1].missing ? rounds[rounds.length-1] : null;
+    let nextRec = null;
+    for (let nr = rn + 1; nr <= maxRound; nr++) {{
+      if (recordedByRound[nr]) {{ nextRec = recordedByRound[nr].re; break; }}
+    }}
+    // We can infer from score progression between prev and next
+    // For now just mark as unknown
+    if (prevRec && nextRec) {{
+      // Compare team1 score: if it went up between prev and next, team1 won at some point
+      // But with multiple missing rounds we can't be sure which — mark unknown
+    }}
+    rounds.push({{
+      roundNum: rn,
+      missing: true,
+      startT: null, endT: null,
+      ct_score: null, t_score: null,
+      t1_win: null, winner: null,
+    }});
+  }}
+}}
+
+let currentRound = -1; // -1 = full match
+
+// Build round strip
+const strip = document.getElementById('roundStrip');
+const halfLen = 12;
+rounds.forEach((r, i) => {{
+  if (i === halfLen) {{
+    const sep = document.createElement('div');
+    sep.className = 'half-sep';
+    strip.appendChild(sep);
+  }}
+  const box = document.createElement('div');
+  box.className = 'round-box';
+  if (r.missing) {{
+    box.style.background = '#333';
+    box.style.opacity = '0.4';
+    box.title = 'R' + r.roundNum + ': not recorded';
+  }} else {{
+    box.style.background = r.t1_win ? '#00aa44' : '#cc2222';
+    box.title = 'R' + r.roundNum + ': CT ' + r.ct_score + '-' + r.t_score + ' T';
+    box.onclick = () => goToRound(i);
+  }}
+  box.textContent = r.roundNum;
+  box.id = 'rbox-' + i;
+  strip.appendChild(box);
+}});
+
+function buildTraces(d) {{
+  const traces = [
+    {{x: d.ts, y: d.t1_mid, name: d.team1, line: {{color: '#00d4ff', width: 2}}}},
+    {{x: d.ts, y: d.t2_mid, name: d.team2, line: {{color: '#ff9f43', width: 2}}}},
+    {{x: d.ts, y: d.t1_bid, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, showlegend: false}},
+    {{x: d.ts, y: d.t1_ask, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false}},
+  ];
+  const shapes = [];
+  const annotations = [];
+  const re = {{x:[], y:[], text:[], color:[]}};
+  const rs = {{x:[], y:[]}};
+  const fk = {{x:[], y:[], text:[], color:[]}};
+  const kills = {{x:[], y:[], text:[], color:[]}};
+
+  for (const ev of (d.hltv || [])) {{
+    if (ev.type === 'round_end') {{
+      const mc = ev.t1_win ? '#00ff64' : '#ff3c3c';
+      const bg = ev.t1_win ? 'rgba(0,255,100,0.4)' : 'rgba(255,60,60,0.4)';
+      re.x.push(ev.t); re.y.push(ev.y);
+      re.text.push(ev.winner + ' wins<br>CT ' + ev.ct_score + '-' + ev.t_score + ' T<br>' + ev.win_type.replace(/_/g, ' '));
+      re.color.push(mc);
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:bg,width:1,dash:'dot'}}}});
+      annotations.push({{x:ev.t,y:1.03,xref:'x',yref:'y',text:ev.ct_score+'-'+ev.t_score,showarrow:false,font:{{color:mc,size:10}}}});
+    }} else if (ev.type === 'round_start') {{
+      rs.x.push(ev.t); rs.y.push(ev.y);
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}}}});
+    }} else if (ev.type === 'first_kill') {{
+      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
+      fk.x.push(ev.t); fk.y.push(ev.y);
+      fk.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
+      fk.color.push(mc);
+    }} else if (ev.type === 'kill') {{
+      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
+      kills.x.push(ev.t); kills.y.push(ev.y);
+      kills.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
+      kills.color.push(mc);
+    }}
+  }}
+  traces.push({{x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers', marker: {{color: re.color, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers', marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
+  traces.push({{x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers', marker: {{color: kills.color, size: 4, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers', marker: {{color: fk.color, size: 8, symbol: 'x', line: {{color: '#88ddaa', width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  return {{traces, shapes, annotations}};
+}}
+
+const {{traces, shapes, annotations}} = buildTraces(d);
+const killCount = d.hltv.filter(e => e.type === 'kill' || e.type === 'first_kill').length;
+const lastT1 = d.t1_mid.filter(v => v !== null).pop() || 0;
+const lastT2 = d.t2_mid.filter(v => v !== null).pop() || 0;
+document.getElementById('info').innerHTML =
+  d.ts.length + ' pts | ' + d.team1 + ': ' + (lastT1*100).toFixed(1) + '% | ' +
+  d.team2 + ': ' + (lastT2*100).toFixed(1) + '% | ' +
+  rounds.length + ' rounds, ' + killCount + ' kills';
+
+Plotly.newPlot('chart', traces, {{
+  paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
+  xaxis: {{title: 'Time (UTC)', gridcolor: '#333', rangeslider: {{visible: true, bgcolor: '#1a1a2e', thickness: 0.08}}}},
+  yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'}},
+  showlegend: false, hovermode: 'x unified', margin: {{t: 40, b: 80}},
+  shapes: shapes, annotations: annotations,
+}}, {{responsive: true}});
+
+function goToRound(i) {{
+  if (i < 0 || i >= rounds.length || rounds[i].missing) return;
+  currentRound = i;
+  const r = rounds[i];
+  Plotly.relayout('chart', {{'xaxis.range': [r.startT, r.endT]}});
+  updateStripHighlight();
+  document.getElementById('allBtn').classList.remove('active');
+}}
+
+function showAll() {{
+  currentRound = -1;
+  Plotly.relayout('chart', {{'xaxis.range': [d.ts[0], d.ts[d.ts.length-1]]}});
+  updateStripHighlight();
+  document.getElementById('allBtn').classList.add('active');
+}}
+
+function prevRound() {{
+  let target = currentRound <= 0 ? 0 : currentRound - 1;
+  // Skip missing rounds
+  while (target > 0 && rounds[target].missing) target--;
+  if (!rounds[target].missing) goToRound(target);
+}}
+
+function nextRound() {{
+  let target = currentRound < 0 ? 0 : currentRound + 1;
+  // Skip missing rounds
+  while (target < rounds.length - 1 && rounds[target].missing) target++;
+  if (target < rounds.length && !rounds[target].missing) goToRound(target);
+}}
+
+function updateStripHighlight() {{
+  document.querySelectorAll('.round-box').forEach(b => b.classList.remove('selected'));
+  if (currentRound >= 0) {{
+    const el = document.getElementById('rbox-' + currentRound);
+    if (el) el.classList.add('selected');
+  }}
+}}
+
+// Arrow key navigation
+document.addEventListener('keydown', (e) => {{
+  if (e.key === 'ArrowLeft') {{ prevRound(); e.preventDefault(); }}
+  else if (e.key === 'ArrowRight') {{ nextRound(); e.preventDefault(); }}
+  else if (e.key === 'Escape') {{ showAll(); e.preventDefault(); }}
+}});
+</script>
+</body></html>"""
+    chartfile.write_text(html)
+    print(f"Static chart saved: {chartfile}")
 
 
 async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: str, team2_token: str):
@@ -271,10 +705,18 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
     out.mkdir(parents=True, exist_ok=True)
     logfile = out / "market_prices.jsonl"
 
-    chartfile = out / "live_chart.html"
+    livefile = out / "live.html"
+    chartfile = out / "chart.html"
+
+    # Start local HTTP server to serve the chart directory
+    port = 8888
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(out))
+    httpd = http.server.HTTPServer(("127.0.0.1", port), handler)
+    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    server_thread.start()
 
     print(f"Recording prices to: {logfile}")
-    print(f"Live chart at: {chartfile}")
+    print(f"Live chart at: http://localhost:{port}/live.html")
     print(f"Polling every {POLL_INTERVAL}s")
     print(f"{team1_name} token: {team1_token[:20]}...")
     print(f"{team2_name} token: {team2_token[:20]}...")
@@ -319,17 +761,46 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
                 poll_price(client, team2_token),
             )
 
-            # Track consecutive N/A streak
-            # Note: poll_price returns a dict with mid=None when book is empty,
-            # not None itself. Check the mid value.
+            # Check if HLTV says map is done (look for score where someone hit 13+)
+            if hltv_file.exists():
+                try:
+                    with open(hltv_file) as hf:
+                        last_line = None
+                        for line in hf:
+                            if line.strip():
+                                last_line = line
+                        if last_line:
+                            last_evt = json_mod.loads(last_line)
+                            if last_evt.get("type") == "scoreboard" and last_evt.get("event") == "score_change":
+                                s1 = last_evt.get("team1_score", 0)
+                                s2 = last_evt.get("team2_score", 0)
+                                total = s1 + s2
+                                in_ot = total > 24
+                                if not in_ot and (s1 >= 13 or s2 >= 13):
+                                    winner = last_evt.get("team1") if s1 > s2 else last_evt.get("team2")
+                                    print(f"\n[DONE] HLTV says map over: {winner} wins {s1}-{s2}. Stopping.")
+                                    write_static_chart(chartfile, all_records, team1_name, team2_name)
+                                    break
+                                elif in_ot:
+                                    ot_rounds = total - 24
+                                    if ot_rounds > 0 and ot_rounds % 6 == 0 and s1 != s2:
+                                        winner = last_evt.get("team1") if s1 > s2 else last_evt.get("team2")
+                                        print(f"\n[DONE] HLTV says map over: {winner} wins {s1}-{s2} (OT). Stopping.")
+                                        write_static_chart(chartfile, all_records, team1_name, team2_name)
+                                        break
+                except Exception:
+                    pass
+
+            # Track consecutive N/A streak as fallback
             t1_is_na = t1_raw is None or (t1_raw and t1_raw.get("mid") is None)
             t2_is_na = t2_raw is None or (t2_raw and t2_raw.get("mid") is None)
             if t1_is_na and t2_is_na:
                 if na_streak_start is None:
                     na_streak_start = time.time()
-                elif time.time() - na_streak_start >= NA_TIMEOUT:
-                    print(f"\n[DONE] Market empty for {NA_TIMEOUT}s — market resolved. Stopping.")
-                    write_chart(chartfile, all_records, team1_name, team2_name)
+                # Only use N/A timeout as a fallback (2 min) in case HLTV tracker dies
+                elif time.time() - na_streak_start >= 120:
+                    print(f"\n[DONE] Market empty for 120s (fallback). Stopping.")
+                    write_static_chart(chartfile, all_records, team1_name, team2_name)
                     break
             else:
                 na_streak_start = None
@@ -361,7 +832,7 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
 
             # Regenerate HTML chart every 10 ticks (~5 seconds)
             if len(all_records) > 1:
-                write_chart(chartfile, all_records, team1_name, team2_name)
+                write_chart(livefile, all_records, team1_name, team2_name)
 
             tick += 1
             if tick % 5 == 0:
@@ -372,6 +843,10 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
                 print(f"[{entry['ts_iso']}] {team1_name}: {t1_str}  |  {team2_name}: {t2_str}")
 
             await asyncio.sleep(POLL_INTERVAL)
+
+    # Always write static chart on exit
+    if all_records:
+        write_static_chart(chartfile, all_records, team1_name, team2_name)
 
 
 if __name__ == "__main__":
@@ -401,7 +876,25 @@ if __name__ == "__main__":
         print("Provide either --preset or --team1-token + --team2-token")
         exit(1)
 
+    # Handle SIGTERM same as KeyboardInterrupt
+    signal.signal(signal.SIGTERM, lambda *_: os.kill(os.getpid(), signal.SIGINT))
+
     try:
         asyncio.run(main(args.output, t1_name, t1_token, t2_name, t2_token))
     except KeyboardInterrupt:
+        pass
+    finally:
+        # Always write static chart on exit
+        out = Path(args.output)
+        chartfile = out / "chart.html"
+        logfile = out / "market_prices.jsonl"
+        if logfile.exists():
+            import json as json_mod2
+            records = []
+            with open(logfile) as f:
+                for line in f:
+                    if line.strip():
+                        records.append(json_mod2.loads(line))
+            if records:
+                write_static_chart(chartfile, records, t1_name, t2_name)
         print("\nStopped. Data saved.")

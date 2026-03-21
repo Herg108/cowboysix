@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "chart-server",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8889", "--directory", "cs2-arbitrage/data/2026-03-21/parivision_vs_spirit/map2"],
+      "port": 8889
+    }
+  ]
+}

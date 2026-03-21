@@ -136,7 +136,7 @@ def main():
     for r in selected:
         print(f"\nStarting Polymarket recorder for {r['map_label'].upper()}: {r['team1_name']} vs {r['team2_name']}")
         print(f"  Output: {r['output_path']}")
-        print(f"  Chart:  {r['output_path']}/live_chart.html")
+        print(f"  Live:   http://localhost:8888/live.html")
 
         pid = os.spawnlp(
             os.P_NOWAIT, "python3",
