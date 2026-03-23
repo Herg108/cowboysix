@@ -60,7 +60,7 @@ class HLTVTracker:
             self.last_score = None
             self.last_round = None
             self.team1_name = None
-
+    
     def process_frame(self, payload: str, chrome_ts: float):
         """Process a WebSocket frame from the scorebot."""
         if not payload.startswith("42"):
@@ -163,9 +163,17 @@ class HLTVTracker:
             )
 
             # Detect map end
-            # Win targets: 13, 16, 19, 22... (13 + 3*N)
+            # Regulation: first to 13 (if lo <= 11, no OT was reached)
+            # If lo >= 12, OT: targets are 16, 19, 22...
             hi = max(t1_score, t2_score)
-            if hi >= 13 and (hi - 13) % 3 == 0 and t1_score != t2_score:
+            lo = min(t1_score, t2_score)
+            if lo <= 11:
+                target = 13
+            else:
+                # OT targets: 16, 19, 22... = 13 + 3*ceil((lo-11)/3)
+                ot_num = ((lo - 11) + 2) // 3
+                target = 13 + 3 * ot_num
+            if hi == target and t1_score != t2_score:
                 winner = t1_name if t1_score > t2_score else t2_name
                 ot_str = " (OT)" if hi > 13 else ""
                 print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score}{ot_str}!")

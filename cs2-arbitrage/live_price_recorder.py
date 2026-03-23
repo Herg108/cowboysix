@@ -789,9 +789,17 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
                         if latest_score:
                             s1 = latest_score.get("team1_score", 0)
                             s2 = latest_score.get("team2_score", 0)
-                            # Win targets: 13, 16, 19, 22... (13 + 3*N)
                             hi = max(s1, s2)
-                            if hi >= 13 and (hi - 13) % 3 == 0 and s1 != s2:
+                            lo = min(s1, s2)
+                            # Regulation: first to 13 (lo <= 11 means no OT)
+                            # OT: targets 16, 19, 22...
+                            if lo <= 11:
+                                target = 13
+                            else:
+                                # OT targets: 16, 19, 22...
+                                ot_num = ((lo - 11) + 2) // 3
+                                target = 13 + 3 * ot_num
+                            if hi == target and s1 != s2:
                                 winner = latest_score.get("team1") if s1 > s2 else latest_score.get("team2")
                                 ot_str = " (OT)" if hi > 13 else ""
                                 print(f"\n[DONE] HLTV says map over: {winner} wins {s1}-{s2}{ot_str}. Stopping.")
