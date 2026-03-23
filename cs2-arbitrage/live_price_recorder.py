@@ -110,6 +110,18 @@ def load_hltv_events(chartfile: Path, records: list = None):
                     return s.get("t_side", "?")
         return "?"
 
+    # Build player→team cache from kills where team is known
+    player_team = {}
+    for e in all_events:
+        if e.get("type") == "kill":
+            kt = e.get("killer_team", "?")
+            if kt and kt != "?":
+                player_team[e.get("killer", "")] = kt
+            # Also learn from victims
+            vt = e.get("victim_team", "?")
+            if vt and vt != "?":
+                player_team[e.get("victim", "")] = vt
+
     events = []
     for e in all_events:
         etype = e.get("type", "")
@@ -121,13 +133,16 @@ def load_hltv_events(chartfile: Path, records: list = None):
         elif etype == "round_start":
             events.append(e)
         elif etype == "scoreboard" and e.get("event") == "round_update":
-            # Round number changed but score didn't — this is a round start
             e["type"] = "round_start"
             events.append(e)
         elif etype == "kill":
-            # Use killer_team directly if available, fall back to resolve_side
             if not e.get("killer_team") or e["killer_team"] == "?":
-                e["killer_team"] = resolve_side(ts, e.get("killer_side", ""))
+                side = e.get("killer_side", "?")
+                if side and side != "?":
+                    e["killer_team"] = resolve_side(ts, side)
+            # Still unknown — use player name cache
+            if not e.get("killer_team") or e["killer_team"] == "?":
+                e["killer_team"] = player_team.get(e.get("killer", ""), "?")
             events.append(e)
 
     return events
