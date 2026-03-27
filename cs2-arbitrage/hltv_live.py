@@ -5,9 +5,8 @@ Opens the HLTV match page in a real Chrome browser (bypasses Cloudflare),
 captures WebSocket frames via Chrome DevTools Protocol performance logs,
 and logs all scorebot events with ms timestamps.
 
-Automatically splits events into map1/, map2/, map3/ folders based on
-when the map changes, so each map's HLTV data sits alongside its
-Polymarket price data.
+Scrapes map picks from the HLTV page to determine map numbers.
+Persists across the entire series — only stops when the series is over.
 
 Usage:
     python3 hltv_live.py https://www.hltv.org/matches/2391757/match --output data/2026-03-20/falcons_vs_navi
@@ -28,14 +27,82 @@ def append_jsonl(filepath: Path, obj: dict):
         f.flush()
 
 
+def scrape_map_picks(driver):
+    """Scrape map veto section from HLTV page.
+    Returns (map_lookup, completed_scores, best_of) or (None, None, None) if not found.
+
+    map_lookup: {"mirage": 1, "ancient": 2, "anubis": 3}
+    completed_scores: [(16, 7), None, None]  -- None means not played yet
+    best_of: 3
+    """
+    try:
+        result = driver.execute_script("""
+            // Get best_of from the veto text
+            const vetoBox = document.querySelector('.veto-box, .standard-box');
+            let bestOf = 3;
+            if (vetoBox) {
+                const text = vetoBox.textContent;
+                const boMatch = text.match(/Best of (\\d+)/i);
+                if (boMatch) bestOf = parseInt(boMatch[1]);
+            }
+
+            // Get map holders - these are the actual maps to be played (not bans)
+            const holders = document.querySelectorAll('.mapholder');
+            const maps = [];
+            for (const h of holders) {
+                const nameEl = h.querySelector('.mapname');
+                if (!nameEl) continue;
+                const name = nameEl.textContent.trim();
+                if (!name || name === 'TBA') continue;
+
+                // Get scores if available
+                const scoreEls = h.querySelectorAll('.results-team-score');
+                let scores = null;
+                if (scoreEls.length >= 2) {
+                    const s1 = parseInt(scoreEls[0].textContent);
+                    const s2 = parseInt(scoreEls[1].textContent);
+                    if (!isNaN(s1) && !isNaN(s2)) {
+                        scores = [s1, s2];
+                    }
+                }
+                maps.push({name: name, scores: scores});
+            }
+            return {maps: maps, bestOf: bestOf};
+        """)
+
+        if not result or not result.get("maps"):
+            return None, None, None
+
+        maps = result["maps"]
+        best_of = result.get("bestOf", 3)
+
+        if len(maps) == 0:
+            return None, None, None
+
+        # Build lookup: normalize map name -> map number
+        # HLTV page shows "Mirage", scorebot sends "de_mirage"
+        map_lookup = {}
+        completed_scores = []
+        for i, m in enumerate(maps):
+            name = m["name"].lower().strip()
+            map_lookup[name] = i + 1
+            completed_scores.append(tuple(m["scores"]) if m["scores"] else None)
+
+        return map_lookup, completed_scores, best_of
+
+    except Exception as e:
+        print(f"[WARN] Failed to scrape map picks: {e}")
+        return None, None, None
+
+
 class HLTVTracker:
-    def __init__(self, output_dir: str, start_map: int = 1):
+    def __init__(self, output_dir: str, best_of: int = 3):
         self.out = Path(output_dir)
         self.out.mkdir(parents=True, exist_ok=True)
 
         self.current_map = None
-        self.map_count = start_map - 1  # will be incremented on first map detection
-        self.logfile = None  # set when first map detected
+        self.map_count = 0  # current map number
+        self.logfile = None
         self.last_score = None
         self.last_round = None
         self.team1_name = None
@@ -43,24 +110,81 @@ class HLTVTracker:
         self.ct_players = set()
         self.t_players = set()
 
+        # Series tracking
+        self.best_of = best_of
+        self.map_picks = None   # {"mirage": 1, "ancient": 2, ...}
+        self.map_wins = {}      # {"TeamA": 2, "TeamB": 1}
+        self.series_over = False
+
+    def set_map_picks(self, map_lookup, completed_scores, best_of):
+        """Set map picks from page scrape."""
+        self.map_picks = map_lookup
+        self.best_of = best_of
+        print(f"\n[VETO] Maps: {map_lookup}")
+        print(f"[VETO] Best of {best_of}")
+
+        # Seed map_wins from completed scores and check if series is already over
+        if completed_scores:
+            team1_wins = 0
+            team2_wins = 0
+            for i, score in enumerate(completed_scores):
+                if score is not None:
+                    s1, s2 = score
+                    if s1 > s2:
+                        team1_wins += 1
+                        print(f"  Map {i+1}: {s1}-{s2} (team1 won)")
+                    elif s2 > s1:
+                        team2_wins += 1
+                        print(f"  Map {i+1}: {s1}-{s2} (team2 won)")
+
+            wins_needed = (best_of + 1) // 2
+            if team1_wins >= wins_needed or team2_wins >= wins_needed:
+                print(f"\n[ALREADY OVER] Series already finished ({team1_wins}-{team2_wins})")
+                self.series_over = True
+                marker = self.out / "series_complete.json"
+                marker.write_text(json.dumps({
+                    "winner": "team1" if team1_wins > team2_wins else "team2",
+                    "map_wins": {"team1": team1_wins, "team2": team2_wins},
+                    "already_complete": True,
+                }))
+
+            self.completed_scores = completed_scores
+
+    def _resolve_map_number(self, map_name: str) -> int:
+        """Look up map number from scraped picks, or fall back to counter."""
+        if self.map_picks:
+            # scorebot sends "de_mirage", picks have "mirage"
+            short = map_name.lower().replace("de_", "").strip()
+            if short in self.map_picks:
+                return self.map_picks[short]
+            # Try fuzzy match
+            for pick_name, num in self.map_picks.items():
+                if short in pick_name or pick_name in short:
+                    return num
+
+        # Fallback: increment counter
+        self.map_count += 1
+        return self.map_count
+
     def _on_new_map(self, map_name: str):
         """Reset per-map state when a new map starts."""
         if map_name != self.current_map:
-            self.map_count += 1
-            map_dir = self.out / f"map{self.map_count}"
+            map_num = self._resolve_map_number(map_name)
+            self.map_count = map_num
+            map_dir = self.out / f"map{map_num}"
             map_dir.mkdir(parents=True, exist_ok=True)
             self.logfile = map_dir / "hltv_events.jsonl"
             if self.current_map is not None:
                 print(f"\n{'='*60}")
-                print(f"New map detected: {map_name} -> map{self.map_count}/")
+                print(f"New map detected: {map_name} -> map{map_num}/")
                 print(f"{'='*60}\n")
             else:
-                print(f"Map: {map_name} -> map{self.map_count}/")
+                print(f"Map: {map_name} -> map{map_num}/")
             self.current_map = map_name
             self.last_score = None
             self.last_round = None
             self.team1_name = None
-    
+
     def process_frame(self, payload: str, chrome_ts: float):
         """Process a WebSocket frame from the scorebot."""
         if not payload.startswith("42"):
@@ -91,6 +215,11 @@ class HLTVTracker:
         return None
 
     def _handle_scoreboard(self, data: dict, ts_ms: int, ts_iso: str):
+        # One-time dump of all raw keys to see what HLTV sends
+        if not hasattr(self, '_dumped_keys'):
+            self._dumped_keys = True
+            print(f"\n[DEBUG] Raw scoreboard keys: {sorted(data.keys())}\n")
+
         t_name = data.get("terroristTeamName", "?")
         ct_name = data.get("ctTeamName", "?")
         t_score = data.get("tTeamScore", 0)
@@ -163,21 +292,40 @@ class HLTVTracker:
             )
 
             # Detect map end
-            # Regulation: first to 13 (if lo <= 11, no OT was reached)
-            # If lo >= 12, OT: targets are 16, 19, 22...
             hi = max(t1_score, t2_score)
             lo = min(t1_score, t2_score)
             if lo <= 11:
                 target = 13
             else:
-                # OT targets: 16, 19, 22... = 13 + 3*ceil((lo-11)/3)
                 ot_num = ((lo - 11) + 2) // 3
                 target = 13 + 3 * ot_num
             if hi == target and t1_score != t2_score:
                 winner = t1_name if t1_score > t2_score else t2_name
                 ot_str = " (OT)" if hi > 13 else ""
                 print(f"\n[MAP DONE] {winner} wins {t1_score}-{t2_score}{ot_str}!")
-                return "stop"
+
+                # Track series score
+                self.map_wins[winner] = self.map_wins.get(winner, 0) + 1
+                wins_needed = (self.best_of + 1) // 2
+
+                if max(self.map_wins.values()) >= wins_needed:
+                    print(f"\n[SERIES OVER] {winner} wins the series!")
+                    for team, wins in self.map_wins.items():
+                        print(f"  {team}: {wins} map(s)")
+                    self.series_over = True
+                    # Write marker file
+                    marker = self.out / "series_complete.json"
+                    marker.write_text(json.dumps({
+                        "winner": winner,
+                        "map_wins": self.map_wins,
+                    }))
+                    return "stop"
+                else:
+                    print(f"  Series: {self.map_wins}")
+                    print(f"  Waiting for next map...")
+                    self.current_map = None  # reset so _on_new_map fires again
+                    self._dumped_keys = False  # allow another key dump for new map
+                    return None
 
         return None
 
@@ -218,19 +366,14 @@ class HLTVTracker:
                 is_first_kill = not self.round_has_first_kill
                 self.round_has_first_kill = True
 
-                # Determine victim's team — then kill color is the opposite
                 victim_name = kill.get("victimName", "")
                 if victim_name in self.ct_players:
-                    victim_side = "CT"
                     victim_team = getattr(self, 'ct_team_name', '?')
                 elif victim_name in self.t_players:
-                    victim_side = "TERRORIST"
                     victim_team = getattr(self, 't_team_name', '?')
                 else:
-                    victim_side = "?"
                     victim_team = "?"
 
-                # Killer team = opposite of victim team
                 if victim_team == getattr(self, 'ct_team_name', ''):
                     killer_side = "TERRORIST"
                     killer_team = getattr(self, 't_team_name', '?')
@@ -273,21 +416,21 @@ def main():
     parser = argparse.ArgumentParser(description="Live HLTV score tracker")
     parser.add_argument("url", help="HLTV match URL")
     parser.add_argument("--output", required=True, help="Base output directory (e.g. data/2026-03-20/falcons_vs_navi)")
-    parser.add_argument("--start-map", type=int, default=1, help="Starting map number (e.g. 2 if joining mid-series)")
+    parser.add_argument("--best-of", type=int, default=3, help="Best of N series (1, 3, or 5)")
     parser.add_argument("--interval", type=float, default=0.5, help="Poll interval in seconds")
     args = parser.parse_args()
 
-    tracker = HLTVTracker(args.output, start_map=args.start_map)
+    tracker = HLTVTracker(args.output, best_of=args.best_of)
 
     print(f"Opening HLTV: {args.url}")
     print(f"Base output: {args.output}")
-    print(f"Events will be split into map1/, map2/, map3/ automatically")
+    print(f"Best of {args.best_of}")
     print()
 
     options = uc.ChromeOptions()
     options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
-    driver = uc.Chrome(headless=False, options=options)
+    driver = uc.Chrome(headless=False, options=options, version_main=146)
     driver.get(args.url)
     print("Waiting for page to load...")
     time.sleep(10)
@@ -299,9 +442,65 @@ def main():
         return
 
     print(f"[OK] Page loaded: {title}")
-    print("Listening for scorebot events...\n")
+
+    # Try initial map pick scrape
+    map_lookup, completed_scores, best_of = scrape_map_picks(driver)
+    if map_lookup:
+        tracker.set_map_picks(map_lookup, completed_scores, best_of)
+        if tracker.series_over:
+            print("Nothing to record. Exiting.")
+            driver.quit()
+            return
+    else:
+        print("[INFO] Map picks not available yet, will retry on reload...")
+
+    print("Waiting for scorebot connection (reloading every 60s)...\n")
 
     try:
+        scorebot_found = False
+        last_reload = time.time()
+        driver.get_log("performance")  # drain initial logs
+        while not scorebot_found:
+            logs = driver.get_log("performance")
+            for entry in logs:
+                msg = json.loads(entry["message"])["message"]
+                if msg.get("method") == "Network.webSocketFrameReceived":
+                    payload = msg.get("params", {}).get("response", {}).get("payloadData", "")
+                    if payload and ("scoreboard" in payload.lower() or "mapName" in payload):
+                        scorebot_found = True
+                        chrome_ts = msg.get("params", {}).get("timestamp", 0)
+                        tracker.process_frame(payload, chrome_ts)
+                        break
+            if not scorebot_found:
+                if time.time() - last_reload >= 60:
+                    # Re-scrape map picks on reload if not found yet
+                    if not tracker.map_picks:
+                        ml, cs, bo = scrape_map_picks(driver)
+                        if ml:
+                            tracker.set_map_picks(ml, cs, bo)
+                            if tracker.series_over:
+                                print("Nothing to record. Exiting.")
+                                driver.quit()
+                                return
+                    print(f"[{time.strftime('%H:%M:%S')}] No scorebot yet, reloading...")
+                    driver.refresh()
+                    time.sleep(5)
+                    driver.get_log("performance")
+                    last_reload = time.time()
+                time.sleep(args.interval)
+
+        # One more scrape attempt after scorebot connects (page fully loaded)
+        if not tracker.map_picks:
+            ml, cs, bo = scrape_map_picks(driver)
+            if ml:
+                tracker.set_map_picks(ml, cs, bo)
+                if tracker.series_over:
+                    print("Nothing to record. Exiting.")
+                    driver.quit()
+                    return
+
+        print("Scorebot connected! Listening for events...\n")
+
         done = False
         while not done:
             logs = driver.get_log("performance")
@@ -330,12 +529,11 @@ def main():
             driver.quit()
         except Exception:
             pass
-        # Kill any lingering chrome/chromedriver processes
         import subprocess
         subprocess.run(["pkill", "-f", "chrome.*remote-debugging"], capture_output=True)
         subprocess.run(["pkill", "-f", "undetected_chromedriver"], capture_output=True)
 
-    print(f"\nData saved to {tracker.logfile}")
+    print(f"\nData saved to {tracker.out}")
 
 
 if __name__ == "__main__":

@@ -167,7 +167,9 @@ def write_data_json(chartfile: Path, records: list, team1_name: str, team2_name:
     hltv_events = load_hltv_events(chartfile, records)
     if hltv_events:
         def is_team1(name):
-            return (name.lower() in team1_name.lower()) or (team1_name.lower() in name.lower())
+            a = name.lower().replace(" ", "")
+            b = team1_name.lower().replace(" ", "")
+            return (a in b) or (b in a)
 
         def find_price(ts):
             for r in records:
@@ -416,7 +418,9 @@ def write_static_chart(chartfile: Path, records: list, team1_name: str, team2_na
     hltv_events = load_hltv_events(chartfile, records)
     if hltv_events:
         def is_team1(name):
-            return (name.lower() in team1_name.lower()) or (team1_name.lower() in name.lower())
+            a = name.lower().replace(" ", "")
+            b = team1_name.lower().replace(" ", "")
+            return (a in b) or (b in a)
 
         def find_price(ts):
             for r in records:
@@ -715,6 +719,261 @@ document.addEventListener('keydown', (e) => {{
     print(f"Static chart saved: {chartfile}")
 
 
+def detect_active_map(base_dir: Path, map_labels: list) -> str | None:
+    """Find which mapN/ has the most recent HLTV activity."""
+    latest_map = None
+    latest_mtime = 0
+    for label in map_labels:
+        hltv_file = base_dir / label / "hltv_events.jsonl"
+        if hltv_file.exists() and hltv_file.stat().st_size > 0:
+            mtime = hltv_file.stat().st_mtime
+            if mtime > latest_mtime:
+                latest_mtime = mtime
+                latest_map = label
+    return latest_map
+
+
+def is_map_done(hltv_file: Path) -> bool:
+    """Check if the map's HLTV data shows a completed map."""
+    if not hltv_file.exists():
+        return False
+    try:
+        latest_score = None
+        with open(hltv_file) as f:
+            for line in f:
+                if line.strip():
+                    evt = json_mod.loads(line)
+                    if evt.get("type") == "scoreboard" and evt.get("event") == "score_change":
+                        latest_score = evt
+        if latest_score:
+            s1 = latest_score.get("team1_score", 0)
+            s2 = latest_score.get("team2_score", 0)
+            hi = max(s1, s2)
+            lo = min(s1, s2)
+            if lo <= 11:
+                target = 13
+            else:
+                ot_num = ((lo - 11) + 2) // 3
+                target = 13 + 3 * ot_num
+            return hi == target and s1 != s2
+    except Exception:
+        pass
+    return False
+
+
+def write_waiting_page(directory: str, message: str):
+    """Write a simple waiting page to live.html in the given directory."""
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    html = f"""<!DOCTYPE html>
+<html><head><title>Waiting</title>
+<meta http-equiv="refresh" content="5">
+<style>
+body {{ background: #1a1a2e; color: #e0e0e0; font-family: monospace;
+       display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+.msg {{ text-align: center; font-size: 1.5em; }}
+.dot {{ animation: blink 1.5s infinite; }}
+@keyframes blink {{ 0%,100% {{ opacity: 0.2; }} 50% {{ opacity: 1; }} }}
+</style></head>
+<body><div class="msg">{message}<span class="dot">...</span></div></body></html>"""
+    (Path(directory) / "live.html").write_text(html)
+
+
+async def main_multi(maps_info: list):
+    """Record prices for a multi-map series, switching tokens as maps change."""
+    base_dir = Path(maps_info[0]["output_path"]).parent
+
+    map_configs = {}
+    map_labels = []
+    for m in maps_info:
+        map_configs[m["map_label"]] = m
+        map_labels.append(m["map_label"])
+
+    # Start HTTP server on first map's dir (will be updated on map switch)
+    port = 8888
+    current_serve_dir = [str(Path(maps_info[0]["output_path"]))]
+
+    class MapHandler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=current_serve_dir[0], **kwargs)
+        def log_message(self, format, *args):
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", port), MapHandler)
+    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    server_thread.start()
+
+    # Write initial waiting page
+    write_waiting_page(current_serve_dir[0], "Waiting for match to start")
+
+    print(f"Multi-map recorder started")
+    print(f"Maps: {', '.join(map_labels)}")
+    print(f"Live chart: http://localhost:{port}/live.html")
+    print(f"Press Ctrl+C to stop.\n")
+
+    current_map = None
+    all_records = []
+    logfile = None
+    livefile = None
+    chartfile = None
+    team1_name = None
+    team2_name = None
+    team1_token = None
+    team2_token = None
+    last_t1 = None
+    last_t2 = None
+    na_streak_start = None
+    tick = 0
+    live_html_written = False
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        while True:
+            # Check for series completion
+            series_marker = base_dir / "series_complete.json"
+            if series_marker.exists():
+                try:
+                    info = json_mod.loads(series_marker.read_text())
+                    if info.get("already_complete"):
+                        print(f"\n[DONE] Series was already complete before recording started.")
+                    else:
+                        print(f"\n[DONE] Series complete!")
+                except Exception:
+                    print(f"\n[DONE] Series complete!")
+                if all_records and chartfile:
+                    write_static_chart(chartfile, all_records, team1_name, team2_name)
+                break
+
+            # Detect active map
+            active = detect_active_map(base_dir, map_labels)
+
+            if active and active != current_map:
+                # Save static chart for previous map
+                if current_map and all_records and chartfile:
+                    print(f"\n[SAVE] Writing static chart for {current_map}...")
+                    write_static_chart(chartfile, all_records, team1_name, team2_name)
+
+                # Switch to new map
+                current_map = active
+                cfg = map_configs[active]
+                out = Path(cfg["output_path"])
+                out.mkdir(parents=True, exist_ok=True)
+                logfile = out / "market_prices.jsonl"
+                livefile = out / "live.html"
+                chartfile = out / "chart.html"
+                team1_name = cfg["team1_name"]
+                team2_name = cfg["team2_name"]
+                team1_token = cfg["team1_token"]
+                team2_token = cfg["team2_token"]
+                last_t1 = None
+                last_t2 = None
+                na_streak_start = None
+                live_html_written = False
+                current_serve_dir[0] = str(out)
+
+                # Load existing records for this map
+                all_records = []
+                if logfile.exists():
+                    with open(logfile) as f:
+                        for line in f:
+                            if line.strip():
+                                all_records.append(json_mod.loads(line))
+
+                print(f"\n[SWITCH] Recording {active}: {team1_name} vs {team2_name}")
+                print(f"  Output: {out}")
+                print(f"  Live: http://localhost:{port}/live.html")
+
+            if current_map is None:
+                if tick % 10 == 0:
+                    print(f"[{time.strftime('%H:%M:%S')}] Waiting for HLTV activity...")
+                tick += 1
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+
+            # Check if current map is done (HLTV detected end)
+            hltv_file = Path(map_configs[current_map]["output_path"]) / "hltv_events.jsonl"
+            if is_map_done(hltv_file):
+                # Map is done — write chart and wait for next map
+                if all_records and chartfile:
+                    write_static_chart(chartfile, all_records, team1_name, team2_name)
+                    print(f"[SAVE] Static chart for {current_map} saved.")
+                # Write waiting page for between maps
+                write_waiting_page(current_serve_dir[0], f"{current_map.upper()} complete — waiting for next map")
+                # Wait for a different map to become active
+                done_map = current_map
+                while True:
+                    await asyncio.sleep(2)
+                    # Check series completion
+                    if series_marker.exists():
+                        print(f"\n[DONE] Series complete!")
+                        break
+                    new_active = detect_active_map(base_dir, map_labels)
+                    if new_active and new_active != done_map:
+                        break
+                    if tick % 20 == 0:
+                        print(f"[{time.strftime('%H:%M:%S')}] Waiting for next map...")
+                    tick += 1
+                current_map = None  # force re-detection on next loop
+                continue
+
+            # Poll prices
+            t1_raw, t2_raw = await asyncio.gather(
+                poll_price(client, team1_token),
+                poll_price(client, team2_token),
+            )
+
+            # Track N/A streak
+            t1_is_na = t1_raw is None or (t1_raw and t1_raw.get("mid") is None)
+            t2_is_na = t2_raw is None or (t2_raw and t2_raw.get("mid") is None)
+            if t1_is_na and t2_is_na:
+                if na_streak_start is None:
+                    na_streak_start = time.time()
+            else:
+                na_streak_start = None
+
+            t1_data = t1_raw if t1_raw is not None else last_t1
+            t2_data = t2_raw if t2_raw is not None else last_t2
+            if t1_raw is not None:
+                last_t1 = t1_raw
+            if t2_raw is not None:
+                last_t2 = t2_raw
+
+            ts_ms = int(time.time() * 1000)
+            entry = {
+                "ts_ms": ts_ms,
+                "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ts_ms / 1000)),
+                f"{team1_name.lower()}_mid": t1_data["mid"] if t1_data else None,
+                f"{team1_name.lower()}_bid": t1_data["best_bid"] if t1_data else None,
+                f"{team1_name.lower()}_ask": t1_data["best_ask"] if t1_data else None,
+                f"{team1_name.lower()}_spread": t1_data["spread"] if t1_data else None,
+                f"{team2_name.lower()}_mid": t2_data["mid"] if t2_data else None,
+                f"{team2_name.lower()}_bid": t2_data["best_bid"] if t2_data else None,
+                f"{team2_name.lower()}_ask": t2_data["best_ask"] if t2_data else None,
+                f"{team2_name.lower()}_spread": t2_data["spread"] if t2_data else None,
+            }
+
+            append_jsonl(logfile, entry)
+            all_records.append(entry)
+
+            if len(all_records) > 1:
+                if not live_html_written:
+                    write_chart_html(livefile, team1_name, team2_name)
+                    live_html_written = True
+                write_data_json(livefile, all_records, team1_name, team2_name)
+
+            tick += 1
+            if tick % 5 == 0:
+                t1_val = t1_data["mid"] if t1_data else None
+                t2_val = t2_data["mid"] if t2_data else None
+                t1_str = f"{t1_val:.3f}" if t1_val is not None else "N/A"
+                t2_str = f"{t2_val:.3f}" if t2_val is not None else "N/A"
+                print(f"[{entry['ts_iso']}] {team1_name}: {t1_str}  |  {team2_name}: {t2_str}")
+
+            await asyncio.sleep(POLL_INTERVAL)
+
+    # Write final chart
+    if all_records and chartfile:
+        write_static_chart(chartfile, all_records, team1_name, team2_name)
+
+
 async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: str, team2_token: str):
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -748,18 +1007,17 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
         print(f"Loaded {len(all_records)} existing records")
 
     tick = 0
-    last_t1 = None  # carry forward last known prices
+    last_t1 = None
     last_t2 = None
-    na_streak_start = None  # track consecutive N/A responses
-    NA_TIMEOUT = 120  # seconds of consecutive N/A before auto-stop
-    recording = False  # wait for HLTV activity before recording
+    na_streak_start = None
+    NA_TIMEOUT = 120
+    recording = False
     hltv_file = chartfile.parent / "hltv_events.jsonl"
     print("Waiting for HLTV activity before recording...")
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
             ts_ms = int(time.time() * 1000)
 
-            # Wait for HLTV activity before recording
             if not recording:
                 if hltv_file.exists() and hltv_file.stat().st_size > 0:
                     recording = True
@@ -791,12 +1049,9 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
                             s2 = latest_score.get("team2_score", 0)
                             hi = max(s1, s2)
                             lo = min(s1, s2)
-                            # Regulation: first to 13 (lo <= 11 means no OT)
-                            # OT: targets 16, 19, 22...
                             if lo <= 11:
                                 target = 13
                             else:
-                                # OT targets: 16, 19, 22...
                                 ot_num = ((lo - 11) + 2) // 3
                                 target = 13 + 3 * ot_num
                             if hi == target and s1 != s2:
@@ -808,13 +1063,11 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
                 except Exception:
                     pass
 
-            # Track consecutive N/A streak as fallback
             t1_is_na = t1_raw is None or (t1_raw and t1_raw.get("mid") is None)
             t2_is_na = t2_raw is None or (t2_raw and t2_raw.get("mid") is None)
             if t1_is_na and t2_is_na:
                 if na_streak_start is None:
                     na_streak_start = time.time()
-                # Only use N/A timeout as a fallback (2 min) in case HLTV tracker dies
                 elif time.time() - na_streak_start >= 120:
                     print(f"\n[DONE] Market empty for 120s (fallback). Stopping.")
                     write_static_chart(chartfile, all_records, team1_name, team2_name)
@@ -822,7 +1075,6 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
             else:
                 na_streak_start = None
 
-            # If API returns None, use last known values
             t1_data = t1_raw if t1_raw is not None else last_t1
             t2_data = t2_raw if t2_raw is not None else last_t2
 
@@ -847,7 +1099,6 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
             append_jsonl(logfile, entry)
             all_records.append(entry)
 
-            # Regenerate HTML chart every 10 ticks (~5 seconds)
             if len(all_records) > 1:
                 write_chart(livefile, all_records, team1_name, team2_name)
 
@@ -861,7 +1112,6 @@ async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: s
 
             await asyncio.sleep(POLL_INTERVAL)
 
-    # Always write static chart on exit
     if all_records:
         write_static_chart(chartfile, all_records, team1_name, team2_name)
 
@@ -874,44 +1124,67 @@ if __name__ == "__main__":
     parser.add_argument("--team1-token", help="Team 1 CLOB token ID")
     parser.add_argument("--team2-name", help="Team 2 name")
     parser.add_argument("--team2-token", help="Team 2 CLOB token ID")
+    parser.add_argument("--maps-json", help="JSON with all maps' token info (multi-map mode)")
     args = parser.parse_args()
-
-    if args.preset:
-        if args.preset not in PRESETS:
-            print(f"Unknown preset: {args.preset}")
-            print(f"Available: {', '.join(PRESETS.keys())}")
-            exit(1)
-        p = PRESETS[args.preset]
-        t1_name, t1_token = p["team1_name"], p["team1_token"]
-        t2_name, t2_token = p["team2_name"], p["team2_token"]
-    elif args.team1_token and args.team2_token:
-        t1_name = args.team1_name or "Team1"
-        t1_token = args.team1_token
-        t2_name = args.team2_name or "Team2"
-        t2_token = args.team2_token
-    else:
-        print("Provide either --preset or --team1-token + --team2-token")
-        exit(1)
 
     # Handle SIGTERM same as KeyboardInterrupt
     signal.signal(signal.SIGTERM, lambda *_: os.kill(os.getpid(), signal.SIGINT))
 
-    try:
-        asyncio.run(main(args.output, t1_name, t1_token, t2_name, t2_token))
-    except KeyboardInterrupt:
-        pass
-    finally:
-        # Always write static chart on exit
-        out = Path(args.output)
-        chartfile = out / "chart.html"
-        logfile = out / "market_prices.jsonl"
-        if logfile.exists():
-            import json as json_mod2
-            records = []
-            with open(logfile) as f:
-                for line in f:
-                    if line.strip():
-                        records.append(json_mod2.loads(line))
-            if records:
-                write_static_chart(chartfile, records, t1_name, t2_name)
-        print("\nStopped. Data saved.")
+    if args.maps_json:
+        # Multi-map mode
+        maps_info = json_mod.loads(args.maps_json)
+        try:
+            asyncio.run(main_multi(maps_info))
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Write static charts for any map that has data
+            for m in maps_info:
+                out = Path(m["output_path"])
+                chartfile = out / "chart.html"
+                logfile = out / "market_prices.jsonl"
+                if logfile.exists():
+                    records = []
+                    with open(logfile) as f:
+                        for line in f:
+                            if line.strip():
+                                records.append(json_mod.loads(line))
+                    if records:
+                        write_static_chart(chartfile, records, m["team1_name"], m["team2_name"])
+            print("\nStopped. Data saved.")
+    else:
+        # Single-map mode (backward compatible)
+        if args.preset:
+            if args.preset not in PRESETS:
+                print(f"Unknown preset: {args.preset}")
+                print(f"Available: {', '.join(PRESETS.keys())}")
+                exit(1)
+            p = PRESETS[args.preset]
+            t1_name, t1_token = p["team1_name"], p["team1_token"]
+            t2_name, t2_token = p["team2_name"], p["team2_token"]
+        elif args.team1_token and args.team2_token:
+            t1_name = args.team1_name or "Team1"
+            t1_token = args.team1_token
+            t2_name = args.team2_name or "Team2"
+            t2_token = args.team2_token
+        else:
+            print("Provide either --preset, --team1-token + --team2-token, or --maps-json")
+            exit(1)
+
+        try:
+            asyncio.run(main(args.output, t1_name, t1_token, t2_name, t2_token))
+        except KeyboardInterrupt:
+            pass
+        finally:
+            out = Path(args.output)
+            chartfile = out / "chart.html"
+            logfile = out / "market_prices.jsonl"
+            if logfile.exists():
+                records = []
+                with open(logfile) as f:
+                    for line in f:
+                        if line.strip():
+                            records.append(json_mod.loads(line))
+                if records:
+                    write_static_chart(chartfile, records, t1_name, t2_name)
+            print("\nStopped. Data saved.")

@@ -3,10 +3,11 @@ Find and record Polymarket CS2 match prices.
 
 Usage:
     python3 find_market.py <polymarket-slug-or-url>
+    python3 find_market.py <polymarket-slug-or-url> <hltv-url>
 
 Examples:
     python3 find_market.py cs2-faze-tyloo-2026-03-20
-    python3 find_market.py https://polymarket.com/sports/counter-strike/cs2-navi-spirit-2026-03-21
+    python3 find_market.py https://polymarket.com/sports/counter-strike/cs2-navi-spirit-2026-03-21 https://www.hltv.org/matches/2391770/match
 """
 
 import sys
@@ -49,9 +50,8 @@ def search_markets(query: str):
                 continue
 
             q_lower = question.lower()
-            is_moneyline = "bo3" in q_lower or ("vs" in q_lower and "map" not in q_lower and "handicap" not in q_lower)
-            is_map_winner = ("map 1" in q_lower or "map 2" in q_lower) and "winner" in q_lower
-            if not is_moneyline and not is_map_winner:
+            is_map_winner = ("map 1" in q_lower or "map 2" in q_lower or "map 3" in q_lower) and "winner" in q_lower
+            if not is_map_winner:
                 continue
 
             outs = json.loads(outcomes) if isinstance(outcomes, str) else outcomes
@@ -60,13 +60,14 @@ def search_markets(query: str):
             if len(outs) != 2:
                 continue
 
-            # Figure out map label
             if "map 1" in q_lower:
                 map_label = "map1"
             elif "map 2" in q_lower:
                 map_label = "map2"
-            else:
+            elif "map 3" in q_lower:
                 map_label = "map3"
+            else:
+                continue
 
             # Extract date from slug
             date_part = event_slug.split("-")[-3:] if event_slug else []
@@ -97,74 +98,65 @@ def search_markets(query: str):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 find_market.py <polymarket-slug-or-url>")
-        print("Example: python3 find_market.py cs2-faze-tyloo-2026-03-20")
+        print("Usage: python3 find_market.py <polymarket-slug-or-url> [hltv-url]")
+        print("Example: python3 find_market.py cs2-faze-tyloo-2026-03-20 https://www.hltv.org/matches/123/match")
         return
 
     query = sys.argv[1]
+
+    # Check if HLTV URL was passed as second arg
+    hltv_url = None
+    if len(sys.argv) >= 3 and "hltv.org" in sys.argv[2]:
+        hltv_url = sys.argv[2]
+
     results = search_markets(query)
 
     if not results:
         return
 
-    print(f"\nFound {len(results)} markets:\n")
+    print(f"\nFound {len(results)} map markets:\n")
     for i, r in enumerate(results):
         print(f"  [{i + 1}] {r['map_label'].upper():6s}  {r['team1_name']} vs {r['team2_name']}  →  {r['output_path']}")
 
-    print(f"\n  [a] Record ALL markets at once")
     print()
 
-    choice = input("Pick one (1/2/3/a): ").strip().lower()
+    # Ask for HLTV URL if not passed as arg
+    if not hltv_url:
+        hltv_url = input("HLTV match URL (or press Enter to skip): ").strip()
 
-    if choice == "a":
-        selected = results
-    elif choice.isdigit() and 1 <= int(choice) <= len(results):
-        selected = [results[int(choice) - 1]]
-    else:
-        print("Invalid choice.")
-        return
+    # Use the first result's output dir as base for HLTV
+    base_dir = "/".join(results[0]["output_path"].split("/")[:3])  # data/date/match_name
 
-    # Ask for HLTV URL
-    print()
-    hltv_url = input("HLTV match URL (or press Enter to skip): ").strip()
+    # Build maps JSON for multi-map recorder
+    maps_json = json.dumps(results)
 
-    # Use the first selected market's output dir as base for HLTV
-    base_dir = "/".join(selected[0]["output_path"].split("/")[:3])  # data/date/match_name
+    # Start ONE Polymarket recorder with all maps' info
+    print(f"\nStarting Polymarket recorder (all maps)")
+    print(f"  Live: http://localhost:8888/live.html")
 
-    # Start Polymarket recorders
-    pids = []
-    for r in selected:
-        print(f"\nStarting Polymarket recorder for {r['map_label'].upper()}: {r['team1_name']} vs {r['team2_name']}")
-        print(f"  Output: {r['output_path']}")
-        print(f"  Live:   http://localhost:8888/live.html")
+    pid = os.spawnlp(
+        os.P_NOWAIT, "python3",
+        "python3", "live_price_recorder.py",
+        "--maps-json", maps_json,
+    )
+    pids = [(pid, "polymarket-all-maps")]
+    print(f"  PID: {pid}")
 
-        pid = os.spawnlp(
-            os.P_NOWAIT, "python3",
-            "python3", "live_price_recorder.py",
-            "--team1-name", r["team1_name"],
-            "--team1-token", r["team1_token"],
-            "--team2-name", r["team2_name"],
-            "--team2-token", r["team2_token"],
-            "--output", r["output_path"],
-        )
-        pids.append((pid, f"polymarket-{r['map_label']}"))
-        print(f"  PID: {pid}")
-
-    # Start HLTV recorder — writes to base_dir, auto-splits into map1/ map2/ map3/
+    # Start HLTV tracker
     if hltv_url:
-        hltv_output = base_dir
-        print(f"\nStarting HLTV score tracker")
-        print(f"  URL: {hltv_url}")
-        print(f"  Output: {hltv_output}/map1/, map2/, map3/ (auto-split by map)")
+        best_of = max(3, len(results))  # infer from number of map markets
 
-        # Figure out the starting map number from the first selected market
-        start_map = int(selected[0]["map_label"].replace("map", ""))
+        print(f"\nStarting HLTV tracker (series mode)")
+        print(f"  URL: {hltv_url}")
+        print(f"  Output: {base_dir}/")
+        print(f"  Best of {best_of}")
+
         pid = os.spawnlp(
             os.P_NOWAIT, "python3",
             "python3", "hltv_live.py",
             hltv_url,
-            "--output", hltv_output,
-            "--start-map", str(start_map),
+            "--output", base_dir,
+            "--best-of", str(best_of),
         )
         pids.append((pid, "hltv"))
         print(f"  PID: {pid}")
@@ -173,11 +165,9 @@ def main():
     print(f"{len(pids)} recorders running:")
     for pid, label in pids:
         print(f"  [{pid}] {label}")
-    print(f"\nPolymarket recorders stop automatically when markets resolve.")
-    if hltv_url:
-        print(f"HLTV tracker stops when a team reaches 13 rounds.")
-    print(f"\nTo stop everything: pkill -f live_price_recorder.py; pkill -f hltv_live.py")
-    print(f"To stop Chrome too: pkill -f 'chrome.*remote-debugging'")
+    print(f"\nHLTV tracker auto-detects maps and tracks series completion.")
+    print(f"Polymarket recorder switches tokens when a new map starts.")
+    print(f"\nTo stop everything: bash stop.sh")
 
 
 if __name__ == "__main__":
