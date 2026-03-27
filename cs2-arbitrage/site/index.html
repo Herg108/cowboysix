@@ -15,111 +15,123 @@
             padding: 2rem 2rem 1rem;
             border-bottom: 1px solid #1a1a2e;
         }
-        .header h1 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #fff;
-        }
-        .header p {
-            color: #888;
-            margin-top: 0.3rem;
-            font-size: 0.9rem;
-        }
-        .nav {
+        .header h1 { font-size: 1.5rem; font-weight: 600; color: #fff; }
+        .header p { color: #888; margin-top: 0.3rem; font-size: 0.9rem; }
+
+        .browser {
             display: flex;
-            gap: 1.5rem;
-            padding: 1rem 2rem;
+            height: calc(100vh - 90px);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            min-width: 300px;
+            border-right: 1px solid #1a1a2e;
+            overflow-y: auto;
+            background: #0d0d15;
+        }
+        .sidebar-section {
             border-bottom: 1px solid #1a1a2e;
-            font-size: 0.85rem;
         }
-        .nav a {
-            color: #888;
-            text-decoration: none;
-            padding-bottom: 0.5rem;
-        }
-        .nav a.active {
-            color: #4fc3f7;
-            border-bottom: 2px solid #4fc3f7;
-        }
-        .nav a:hover { color: #ccc; }
-        .content {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        .match-card {
-            background: #12121f;
-            border: 1px solid #1a1a2e;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-        .match-card h2 {
-            font-size: 1.1rem;
-            margin-bottom: 0.3rem;
-        }
-        .match-meta {
-            color: #666;
-            font-size: 0.8rem;
-            margin-bottom: 1rem;
-        }
-        .match-meta span {
-            margin-right: 1rem;
-        }
-        .tag {
-            display: inline-block;
-            background: #1a2a1a;
-            color: #4caf50;
+        .sidebar-header {
+            padding: 0.8rem 1rem;
             font-size: 0.7rem;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-        .tag.resolved {
-            background: #1a1a2e;
-            color: #888;
-        }
-        .stats-row {
-            display: flex;
-            gap: 2rem;
-            margin: 1rem 0;
-        }
-        .stat {
-            display: flex;
-            flex-direction: column;
-        }
-        .stat-label {
-            font-size: 0.7rem;
-            color: #666;
             text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #555;
+            background: #0a0a12;
+        }
+        .sidebar-item {
+            padding: 0.7rem 1rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #111;
+            transition: background 0.15s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sidebar-item:hover { background: #15152a; }
+        .sidebar-item.active { background: #1a1a3a; color: #4fc3f7; }
+        .sidebar-item .count {
+            font-size: 0.7rem;
+            color: #555;
+            background: #1a1a2e;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .sidebar-item.active .count { color: #4fc3f7; background: #1a2a4e; }
+
+        .date-item { font-weight: 600; }
+        .match-item { padding-left: 1.5rem; }
+        .match-item .match-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 200px;
+        }
+
+        /* Map tabs */
+        .map-tabs {
+            display: flex;
+            gap: 0;
+            background: #0d0d15;
+            border-bottom: 1px solid #1a1a2e;
+            padding: 0 1rem;
+        }
+        .map-tab {
+            padding: 0.6rem 1.2rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: #888;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+            text-transform: uppercase;
+            font-weight: 600;
             letter-spacing: 0.05em;
         }
-        .stat-value {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: #fff;
-        }
-        .chart-container {
-            width: 100%;
-            margin-top: 1rem;
-            border-radius: 6px;
+        .map-tab:hover { color: #ccc; }
+        .map-tab.active { color: #4fc3f7; border-bottom-color: #4fc3f7; }
+
+        /* Main content */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
-            border: 1px solid #1a1a2e;
         }
-        .chart-container iframe {
-            width: 100%;
-            height: 700px;
+        .chart-frame {
+            flex: 1;
             border: none;
             background: #fff;
         }
-        .footer {
-            text-align: center;
-            padding: 2rem;
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             color: #444;
-            font-size: 0.75rem;
-            border-top: 1px solid #1a1a2e;
-            margin-top: 3rem;
+            gap: 0.5rem;
         }
+        .empty-state .icon { font-size: 3rem; opacity: 0.3; }
+        .empty-state p { font-size: 0.9rem; }
+
+        /* Collapsed dates */
+        .date-matches { display: none; }
+        .date-matches.open { display: block; }
+        .date-item .arrow {
+            transition: transform 0.2s;
+            font-size: 0.6rem;
+            color: #555;
+        }
+        .date-item.open .arrow { transform: rotate(90deg); }
+
+        /* Scrollbar */
+        .sidebar::-webkit-scrollbar { width: 6px; }
+        .sidebar::-webkit-scrollbar-track { background: transparent; }
+        .sidebar::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 3px; }
     </style>
 </head>
 <body>
@@ -127,128 +139,170 @@
         <h1>CS2 Market Monitor</h1>
         <p>Tracking prediction market prices during live Counter-Strike 2 matches</p>
     </div>
-    <div class="nav">
-        <a href="#" class="active">Matches</a>
-    </div>
-    <div class="content">
-        <div class="match-card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <h2>The MongolZ vs Vitality</h2>
-                    <div class="match-meta">
-                        <span>BLAST Open Rotterdam Group B</span>
-                        <span>BO3</span>
-                        <span>March 21, 2026</span>
-                    </div>
-                </div>
-                <span class="tag resolved">RESOLVED &mdash; Vitality 2-0</span>
-            </div>
-            <div class="stats-row">
-                <div class="stat">
-                    <span class="stat-label">Market</span>
-                    <span class="stat-value">Map 2 Winner (Overpass)</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Features</span>
-                    <span class="stat-value">HLTV Round + Kill Overlay</span>
-                </div>
-            </div>
-            <div class="chart-container">
-                <iframe src="mongolz_vitality_map2.html"></iframe>
-            </div>
+    <div class="browser">
+        <div class="sidebar" id="sidebar">
+            <div style="padding: 1rem; color: #555; font-size: 0.85rem;">Loading data...</div>
         </div>
-
-        <div class="match-card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <h2>FURIA vs Aurora Gaming</h2>
-                    <div class="match-meta">
-                        <span>BLAST Open Rotterdam Group A</span>
-                        <span>BO3</span>
-                        <span>March 20, 2026</span>
-                    </div>
-                </div>
-                <span class="tag resolved">RESOLVED &mdash; Aurora 2-0</span>
-            </div>
-            <div class="stats-row">
-                <div class="stat">
-                    <span class="stat-label">Market</span>
-                    <span class="stat-value">Map 2 Winner (Inferno)</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Features</span>
-                    <span class="stat-value">HLTV Round + First Kill Overlay</span>
-                </div>
-            </div>
-            <div class="chart-container">
-                <iframe src="furia_aurora_map2.html"></iframe>
-            </div>
-        </div>
-
-        <div class="match-card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <h2>FaZe vs TYLOO</h2>
-                    <div class="match-meta">
-                        <span>BLAST Open Rotterdam Group A</span>
-                        <span>BO3</span>
-                        <span>March 20, 2026</span>
-                    </div>
-                </div>
-                <span class="tag resolved">RESOLVED &mdash; FaZe 2-1</span>
-            </div>
-            <div class="stats-row">
-                <div class="stat">
-                    <span class="stat-label">Market</span>
-                    <span class="stat-value">Match Winner (Map 3)</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Price Points</span>
-                    <span class="stat-value">5,921</span>
-                </div>
-            </div>
-            <div class="chart-container">
-                <iframe src="faze_tyloo_map3.html"></iframe>
-            </div>
-        </div>
-
-        <div class="match-card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <h2>FURIA vs TYLOO</h2>
-                    <div class="match-meta">
-                        <span>BLAST Open Rotterdam Group A</span>
-                        <span>BO3</span>
-                        <span>March 18, 2026</span>
-                    </div>
-                </div>
-                <span class="tag resolved">RESOLVED &mdash; FURIA 2-0</span>
-            </div>
-            <div class="stats-row">
-                <div class="stat">
-                    <span class="stat-label">Total Volume</span>
-                    <span class="stat-value">$940,030</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Markets Tracked</span>
-                    <span class="stat-value">3</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Price Points</span>
-                    <span class="stat-value">4,838</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Pre-match Odds</span>
-                    <span class="stat-value">FURIA 82.5%</span>
-                </div>
-            </div>
-            <div class="chart-container">
-                <iframe src="furia_tyloo_overlay.html"></iframe>
+        <div class="main" id="main">
+            <div class="empty-state">
+                <div class="icon">📊</div>
+                <p>Select a match from the sidebar to view charts</p>
             </div>
         </div>
     </div>
-    <div class="footer">
-        Data sourced from Polymarket. Charts update after match resolution.
-    </div>
+
+    <script>
+        // Data structure built by scanning the data/ directory
+        // We'll load this via a small JSON endpoint or inline it
+
+        const DATA_BASE = 'data';
+        let matchData = {}; // { "2026-03-20": { "faze_vs_tyloo": ["map1", "map2", "map3"], ... }, ... }
+        let currentMatch = null;
+        let currentMap = null;
+
+        async function loadIndex() {
+            // Fetch the directory listing by trying to load index.json
+            // If it doesn't exist, we'll build it from known structure
+            try {
+                const resp = await fetch(`data/index.json`);
+                if (resp.ok) {
+                    matchData = await resp.json();
+                    renderSidebar();
+                    return;
+                }
+            } catch(e) {}
+
+            // Fallback: try to load via the file list
+            document.getElementById('sidebar').innerHTML =
+                '<div style="padding: 1rem; color: #888; font-size: 0.8rem;">' +
+                'Run <code style="color: #4fc3f7;">python3 build_index.py</code> to build the site data.' +
+                '</div>';
+        }
+
+        function renderSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            let html = '';
+
+            // Sort dates descending (newest first)
+            const dates = Object.keys(matchData).sort().reverse();
+
+            for (const date of dates) {
+                const matches = matchData[date];
+                const matchNames = Object.keys(matches);
+                const dateDisplay = formatDate(date);
+
+                html += `<div class="sidebar-section">`;
+                html += `<div class="sidebar-item date-item" onclick="toggleDate(this)" data-date="${date}">`;
+                html += `<span>${dateDisplay}</span>`;
+                html += `<span style="display:flex;align-items:center;gap:6px;">`;
+                html += `<span class="count">${matchNames.length} match${matchNames.length !== 1 ? 'es' : ''}</span>`;
+                html += `<span class="arrow">▶</span>`;
+                html += `</span>`;
+                html += `</div>`;
+                html += `<div class="date-matches" data-date="${date}">`;
+
+                for (const match of matchNames) {
+                    const maps = matches[match];
+                    const displayName = formatMatchName(match);
+                    html += `<div class="sidebar-item match-item" onclick="selectMatch('${date}', '${match}')" data-match="${date}/${match}">`;
+                    html += `<span class="match-name" title="${displayName}">${displayName}</span>`;
+                    html += `<span class="count">${maps.length} map${maps.length !== 1 ? 's' : ''}</span>`;
+                    html += `</div>`;
+                }
+
+                html += `</div></div>`;
+            }
+
+            sidebar.innerHTML = html;
+
+            // Auto-expand the most recent date
+            if (dates.length > 0) {
+                const first = sidebar.querySelector('.date-item');
+                if (first) toggleDate(first);
+            }
+        }
+
+        function toggleDate(el) {
+            const date = el.dataset.date;
+            const matches = document.querySelector(`.date-matches[data-date="${date}"]`);
+            const isOpen = matches.classList.contains('open');
+
+            if (isOpen) {
+                matches.classList.remove('open');
+                el.classList.remove('open');
+            } else {
+                matches.classList.add('open');
+                el.classList.add('open');
+            }
+        }
+
+        function selectMatch(date, match) {
+            currentMatch = `${date}/${match}`;
+            const maps = matchData[date][match];
+
+            // Highlight active match
+            document.querySelectorAll('.match-item').forEach(el => el.classList.remove('active'));
+            const active = document.querySelector(`.match-item[data-match="${date}/${match}"]`);
+            if (active) active.classList.add('active');
+
+            // Show map tabs + first map
+            showMapTabs(date, match, maps);
+            selectMap(date, match, maps[0]);
+        }
+
+        function showMapTabs(date, match, maps) {
+            const main = document.getElementById('main');
+
+            let tabsHtml = '<div class="map-tabs" id="mapTabs">';
+            for (const map of maps) {
+                tabsHtml += `<div class="map-tab" data-map="${map}" onclick="selectMap('${date}', '${match}', '${map}')">${map}</div>`;
+            }
+            tabsHtml += '</div>';
+
+            main.innerHTML = tabsHtml + '<iframe class="chart-frame" id="chartFrame"></iframe>';
+        }
+
+        function selectMap(date, match, map) {
+            currentMap = map;
+
+            // Highlight active tab
+            document.querySelectorAll('.map-tab').forEach(el => el.classList.remove('active'));
+            const active = document.querySelector(`.map-tab[data-map="${map}"]`);
+            if (active) active.classList.add('active');
+
+            // Load chart
+            const frame = document.getElementById('chartFrame');
+            if (frame) {
+                frame.src = `${DATA_BASE}/${date}/${match}/${map}/chart.html`;
+            }
+        }
+
+        function formatDate(dateStr) {
+            const [y, m, d] = dateStr.split('-');
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${months[parseInt(m) - 1]} ${parseInt(d)}, ${y}`;
+        }
+
+        function formatMatchName(match) {
+            return match.replace(/_/g, ' ').replace(/\bvs\b/g, 'vs').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (!currentMatch) return;
+            const tabs = document.querySelectorAll('.map-tab');
+            if (tabs.length === 0) return;
+
+            const currentIdx = Array.from(tabs).findIndex(t => t.classList.contains('active'));
+
+            if (e.key === 'ArrowLeft' && currentIdx > 0) {
+                tabs[currentIdx - 1].click();
+            } else if (e.key === 'ArrowRight' && currentIdx < tabs.length - 1) {
+                tabs[currentIdx + 1].click();
+            }
+        });
+
+        loadIndex();
+    </script>
 </body>
 </html>

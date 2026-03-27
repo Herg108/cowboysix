@@ -50,9 +50,6 @@ def search_markets(query: str):
                 continue
 
             q_lower = question.lower()
-            is_map_winner = ("map 1" in q_lower or "map 2" in q_lower or "map 3" in q_lower) and "winner" in q_lower
-            if not is_map_winner:
-                continue
 
             outs = json.loads(outcomes) if isinstance(outcomes, str) else outcomes
             toks = json.loads(tokens) if isinstance(tokens, str) else tokens
@@ -60,12 +57,20 @@ def search_markets(query: str):
             if len(outs) != 2:
                 continue
 
-            if "map 1" in q_lower:
-                map_label = "map1"
-            elif "map 2" in q_lower:
-                map_label = "map2"
-            elif "map 3" in q_lower:
-                map_label = "map3"
+            is_map_winner = ("map 1" in q_lower or "map 2" in q_lower or "map 3" in q_lower) and "winner" in q_lower
+            is_moneyline = "map" not in q_lower and "total" not in q_lower and "handicap" not in q_lower and "odd" not in q_lower
+
+            if is_map_winner:
+                if "map 1" in q_lower:
+                    map_label = "map1"
+                elif "map 2" in q_lower:
+                    map_label = "map2"
+                elif "map 3" in q_lower:
+                    map_label = "map3"
+                else:
+                    continue
+            elif is_moneyline:
+                map_label = "moneyline"
             else:
                 continue
 
@@ -89,6 +94,18 @@ def search_markets(query: str):
                 "team2_token": toks[1],
                 "output_path": output_path,
             })
+
+    # If no map3 market but we have a moneyline, use it as map3 (in bo3, map3 winner = series winner)
+    labels = {r["map_label"] for r in results}
+    if "map3" not in labels and "moneyline" in labels:
+        for r in results:
+            if r["map_label"] == "moneyline":
+                r["map_label"] = "map3"
+                r["output_path"] = r["output_path"].replace("/moneyline", "/map3")
+                break
+
+    # Remove moneyline if we already have map3
+    results = [r for r in results if r["map_label"] != "moneyline"]
 
     # Sort: map1, map2, map3
     order = {"map1": 0, "map2": 1, "map3": 2}
@@ -151,12 +168,14 @@ def main():
         print(f"  Output: {base_dir}/")
         print(f"  Best of {best_of}")
 
+        polymarket_url = query if query.startswith("http") else f"https://polymarket.com/event/{query}"
         pid = os.spawnlp(
             os.P_NOWAIT, "python3",
             "python3", "hltv_live.py",
             hltv_url,
             "--output", base_dir,
             "--best-of", str(best_of),
+            "--polymarket-url", polymarket_url,
         )
         pids.append((pid, "hltv"))
         print(f"  PID: {pid}")

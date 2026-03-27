@@ -719,46 +719,15 @@ document.addEventListener('keydown', (e) => {{
     print(f"Static chart saved: {chartfile}")
 
 
-def detect_active_map(base_dir: Path, map_labels: list) -> str | None:
-    """Find which mapN/ has the most recent HLTV activity."""
-    latest_map = None
-    latest_mtime = 0
-    for label in map_labels:
-        hltv_file = base_dir / label / "hltv_events.jsonl"
-        if hltv_file.exists() and hltv_file.stat().st_size > 0:
-            mtime = hltv_file.stat().st_mtime
-            if mtime > latest_mtime:
-                latest_mtime = mtime
-                latest_map = label
-    return latest_map
-
-
-def is_map_done(hltv_file: Path) -> bool:
-    """Check if the map's HLTV data shows a completed map."""
-    if not hltv_file.exists():
-        return False
+def read_map_state(base_dir: Path) -> dict | None:
+    """Read map_state.json written by the HLTV tracker."""
+    state_file = base_dir / "map_state.json"
+    if not state_file.exists():
+        return None
     try:
-        latest_score = None
-        with open(hltv_file) as f:
-            for line in f:
-                if line.strip():
-                    evt = json_mod.loads(line)
-                    if evt.get("type") == "scoreboard" and evt.get("event") == "score_change":
-                        latest_score = evt
-        if latest_score:
-            s1 = latest_score.get("team1_score", 0)
-            s2 = latest_score.get("team2_score", 0)
-            hi = max(s1, s2)
-            lo = min(s1, s2)
-            if lo <= 11:
-                target = 13
-            else:
-                ot_num = ((lo - 11) + 2) // 3
-                target = 13 + 3 * ot_num
-            return hi == target and s1 != s2
+        return json_mod.loads(state_file.read_text())
     except Exception:
-        pass
-    return False
+        return None
 
 
 def write_waiting_page(directory: str, message: str):
@@ -825,33 +794,58 @@ async def main_multi(maps_info: list):
     tick = 0
     live_html_written = False
 
+    # Clean up stale state file from previous runs
+    stale_state = base_dir / "map_state.json"
+    if stale_state.exists():
+        stale_state.unlink()
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
-            # Check for series completion
-            series_marker = base_dir / "series_complete.json"
-            if series_marker.exists():
-                try:
-                    info = json_mod.loads(series_marker.read_text())
-                    if info.get("already_complete"):
-                        print(f"\n[DONE] Series was already complete before recording started.")
-                    else:
-                        print(f"\n[DONE] Series complete!")
-                except Exception:
-                    print(f"\n[DONE] Series complete!")
+            # Read map state from HLTV tracker
+            state = read_map_state(base_dir)
+
+            if state is None:
+                # HLTV tracker hasn't written state yet
+                if tick % 10 == 0:
+                    print(f"[{time.strftime('%H:%M:%S')}] Waiting for HLTV tracker...")
+                tick += 1
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+
+            if state["status"] == "series_over":
+                # Series ended — save current map chart and stop
                 if all_records and chartfile:
                     write_static_chart(chartfile, all_records, team1_name, team2_name)
+                print(f"\n[DONE] Series complete!")
                 break
 
-            # Detect active map
-            active = detect_active_map(base_dir, map_labels)
+            if state["status"] == "map_ended" and current_map is not None:
+                # Current map just ended — save chart, show waiting page
+                if all_records and chartfile:
+                    write_static_chart(chartfile, all_records, team1_name, team2_name)
+                    print(f"[SAVE] Static chart for {current_map} saved.")
+                write_waiting_page(current_serve_dir[0], f"{current_map.upper()} complete — waiting for next map")
+                current_map = None
+                tick += 1
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
 
-            if active and active != current_map:
-                # Save static chart for previous map
+            active = state.get("active_map")
+
+            if state["status"] == "live" and active and active != current_map:
+                # New map is live — switch to it
+                if active not in map_configs:
+                    # No Polymarket token for this map — just wait
+                    if tick % 10 == 0:
+                        print(f"[{time.strftime('%H:%M:%S')}] {active} is live but no Polymarket market found, waiting...")
+                    tick += 1
+                    await asyncio.sleep(POLL_INTERVAL)
+                    continue
+
                 if current_map and all_records and chartfile:
                     print(f"\n[SAVE] Writing static chart for {current_map}...")
                     write_static_chart(chartfile, all_records, team1_name, team2_name)
 
-                # Switch to new map
                 current_map = active
                 cfg = map_configs[active]
                 out = Path(cfg["output_path"])
@@ -886,32 +880,6 @@ async def main_multi(maps_info: list):
                     print(f"[{time.strftime('%H:%M:%S')}] Waiting for HLTV activity...")
                 tick += 1
                 await asyncio.sleep(POLL_INTERVAL)
-                continue
-
-            # Check if current map is done (HLTV detected end)
-            hltv_file = Path(map_configs[current_map]["output_path"]) / "hltv_events.jsonl"
-            if is_map_done(hltv_file):
-                # Map is done — write chart and wait for next map
-                if all_records and chartfile:
-                    write_static_chart(chartfile, all_records, team1_name, team2_name)
-                    print(f"[SAVE] Static chart for {current_map} saved.")
-                # Write waiting page for between maps
-                write_waiting_page(current_serve_dir[0], f"{current_map.upper()} complete — waiting for next map")
-                # Wait for a different map to become active
-                done_map = current_map
-                while True:
-                    await asyncio.sleep(2)
-                    # Check series completion
-                    if series_marker.exists():
-                        print(f"\n[DONE] Series complete!")
-                        break
-                    new_active = detect_active_map(base_dir, map_labels)
-                    if new_active and new_active != done_map:
-                        break
-                    if tick % 20 == 0:
-                        print(f"[{time.strftime('%H:%M:%S')}] Waiting for next map...")
-                    tick += 1
-                current_map = None  # force re-detection on next loop
                 continue
 
             # Poll prices
