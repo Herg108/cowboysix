@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import json as json_mod
+import subprocess
 import threading
 import http.server
 import functools
@@ -717,6 +718,12 @@ document.addEventListener('keydown', (e) => {{
 </body></html>"""
     chartfile.write_text(html)
     print(f"Static chart saved: {chartfile}")
+
+    # Rebuild site index
+    try:
+        subprocess.run(["python3", "build_index.py"], capture_output=True, timeout=10)
+    except Exception:
+        pass
 
 
 def read_map_state(base_dir: Path) -> dict | None:

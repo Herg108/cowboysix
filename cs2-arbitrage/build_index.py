@@ -45,16 +45,16 @@ def build():
         if matches:
             index[date_str] = matches
 
-    # Copy chart files into site/data/
-    if SITE_DATA.exists():
-        shutil.rmtree(SITE_DATA)
-
+    # Copy new/updated chart files into site/data/
     copied = 0
     for date_str, matches in index.items():
         for match_name, maps in matches.items():
             for map_name in maps:
                 src = DATA_DIR / date_str / match_name / map_name / "chart.html"
                 dst = SITE_DATA / date_str / match_name / map_name / "chart.html"
+                # Skip if destination is already up to date
+                if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+                    continue
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
                 copied += 1
