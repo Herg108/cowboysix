@@ -719,13 +719,14 @@ document.addEventListener('keydown', (e) => {{
     chartfile.write_text(html)
     print(f"Static chart saved: {chartfile}")
 
-    # Rebuild site index
+
+def _rebuild_index():
     try:
-        result = subprocess.run(["python3", "build_index.py"], capture_output=True, timeout=10, text=True)
-        if result.returncode == 0:
-            print(f"Site index rebuilt.")
+        subprocess.run(["python3", "build_index.py"], capture_output=True, timeout=10, text=True)
+        print("Site index rebuilt.")
     except Exception:
         pass
+
 
 
 def read_map_state(base_dir: Path) -> dict | None:
@@ -822,9 +823,6 @@ async def main_multi(maps_info: list):
                 continue
 
             if state["status"] == "series_over":
-                # Series ended — save current map chart and stop
-                if all_records and chartfile:
-                    write_static_chart(chartfile, all_records, team1_name, team2_name)
                 print(f"\n[DONE] Series complete!")
                 break
 
@@ -832,6 +830,7 @@ async def main_multi(maps_info: list):
                 # Current map just ended — save chart, show waiting page
                 if all_records and chartfile:
                     write_static_chart(chartfile, all_records, team1_name, team2_name)
+                    _rebuild_index()
                     print(f"[SAVE] Static chart for {current_map} saved.")
                 write_waiting_page(current_serve_dir[0], f"{current_map.upper()} complete — waiting for next map")
                 current_map = None
@@ -850,10 +849,6 @@ async def main_multi(maps_info: list):
                     tick += 1
                     await asyncio.sleep(POLL_INTERVAL)
                     continue
-
-                if current_map and all_records and chartfile:
-                    print(f"\n[SAVE] Writing static chart for {current_map}...")
-                    write_static_chart(chartfile, all_records, team1_name, team2_name)
 
                 current_map = active
                 cfg = map_configs[active]
@@ -946,9 +941,6 @@ async def main_multi(maps_info: list):
 
             await asyncio.sleep(POLL_INTERVAL)
 
-    # Write final chart
-    if all_records and chartfile:
-        write_static_chart(chartfile, all_records, team1_name, team2_name)
 
 
 async def main(output_dir: str, team1_name: str, team1_token: str, team2_name: str, team2_token: str):
@@ -1115,7 +1107,6 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             pass
         finally:
-            # Write static charts for any map that has data
             for m in maps_info:
                 out = Path(m["output_path"])
                 chartfile = out / "chart.html"
@@ -1128,6 +1119,7 @@ if __name__ == "__main__":
                                 records.append(json_mod.loads(line))
                     if records:
                         write_static_chart(chartfile, records, m["team1_name"], m["team2_name"])
+            _rebuild_index()
             print("\nStopped. Data saved.")
     else:
         # Single-map mode (backward compatible)
