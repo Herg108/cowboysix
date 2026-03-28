@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html><head>
+<title>Vitality vs Aurora Gaming</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
+  h1 { text-align: center; color: #e94560; margin-bottom: 5px; }
+  .info { text-align: center; color: #999; margin-bottom: 10px; }
+  #chart { width: 100%; height: 80vh; }
+  .status { color: #4caf50; }
+</style>
+</head><body>
+<h1>Vitality vs Aurora Gaming</h1>
+<div class="info" id="info">Loading...</div>
+<div id="chart"></div>
+<script>
+const DATA_URL = 'live_data.json';
+let lastLen = 0;
+let chartReady = false;
+let userZoomed = false;
+let savedXRange = null;
+let rightPinned = true;  // right edge follows latest data
+let ignoreRelayout = false;  // guard against our own relayout calls
+
+function buildTraces(d) {
+  const traces = [
+    {x: d.ts, y: d.t1_mid, name: d.team1, line: {color: '#00d4ff', width: 2}},
+    {x: d.ts, y: d.t2_mid, name: d.team2, line: {color: '#ff9f43', width: 2}},
+    {x: d.ts, y: d.t1_bid, name: 'Bid', line: {color: '#00d4ff', width: 1, dash: 'dot'}, showlegend: false},
+    {x: d.ts, y: d.t1_ask, name: 'Ask', line: {color: '#00d4ff', width: 1, dash: 'dot'}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false},
+  ];
+
+  // HLTV events
+  const re = {x:[], y:[], text:[], color:[], type: 'round_end'};
+  const rs = {x:[], y:[], type: 'round_start'};
+  const fk = {x:[], y:[], text:[], color:[], type: 'first_kill'};
+  const kills = {x:[], y:[], text:[], color:[], type: 'kill'};
+  const shapes = [];
+  const annotations = [];
+
+  for (const ev of (d.hltv || [])) {
+    if (ev.type === 'round_end') {
+      const mc = ev.t1_win ? '#00ff64' : '#ff3c3c';
+      const bg = ev.t1_win ? 'rgba(0,255,100,0.4)' : 'rgba(255,60,60,0.4)';
+      re.x.push(ev.t); re.y.push(ev.y);
+      re.text.push(ev.winner + ' wins<br>CT ' + ev.ct_score + '-' + ev.t_score + ' T<br>' + ev.win_type.replace(/_/g, ' '));
+      re.color.push(mc);
+      shapes.push({type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{color:bg,width:1,dash:'dot'}});
+      annotations.push({x:ev.t,y:1.03,xref:'x',yref:'y',text:ev.ct_score+'-'+ev.t_score,showarrow:false,font:{color:mc,size:10}});
+    } else if (ev.type === 'round_start') {
+      rs.x.push(ev.t); rs.y.push(ev.y);
+      shapes.push({type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}});
+    } else if (ev.type === 'first_kill') {
+      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
+      fk.x.push(ev.t); fk.y.push(ev.y);
+      fk.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
+      fk.color.push(mc);
+    } else if (ev.type === 'kill') {
+      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
+      kills.x.push(ev.t); kills.y.push(ev.y);
+      kills.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
+      kills.color.push(mc);
+    }
+  }
+
+  traces.push({x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers',
+    marker: {color: re.color, size: 10, symbol: 'diamond'}, hovertemplate: '%{text}<extra></extra>'});
+  traces.push({x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers',
+    marker: {color: '#ffff00', size: 8, symbol: 'triangle-up'}, hovertemplate: 'Round Start<extra></extra>'});
+  traces.push({x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers',
+    marker: {color: kills.color, size: 4, symbol: 'circle'}, hovertemplate: '%{text}<extra></extra>'});
+  traces.push({x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers',
+    marker: {color: fk.color, size: 8, symbol: 'x', line: {color: '#88ddaa', width: 1}}, hovertemplate: '%{text}<extra></extra>'});
+
+  return {traces, shapes, annotations};
+}
+
+function getLayout(d, shapes, annotations) {
+  return {
+    paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {color: '#eee'},
+    xaxis: {title: 'Time (UTC)', gridcolor: '#333',
+      range: [d.ts[0], d.ts[d.ts.length-1]],
+      rangeslider: {visible: true, bgcolor: '#1a1a2e', thickness: 0.08,
+        range: [d.ts[0], d.ts[d.ts.length-1]]}},
+    yaxis: {title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'},
+    showlegend: false, hovermode: 'x unified', margin: {t: 40, b: 80},
+    shapes: shapes,
+    annotations: annotations,
+  };
+}
+
+async function update() {
+  try {
+    const resp = await fetch(DATA_URL + '?t=' + Date.now());
+    const d = await resp.json();
+
+    if (d.ts.length === lastLen) return;
+    lastLen = d.ts.length;
+
+    const {traces, shapes, annotations} = buildTraces(d);
+    const layout = getLayout(d, shapes, annotations);
+
+    const lastT1 = d.t1_mid.filter(v => v !== null).pop() || 0;
+    const lastT2 = d.t2_mid.filter(v => v !== null).pop() || 0;
+    const rounds = d.hltv.filter(e => e.type === 'round_end').length;
+    const killCount = d.hltv.filter(e => e.type === 'kill' || e.type === 'first_kill').length;
+    document.getElementById('info').innerHTML =
+      d.ts.length + ' pts | ' + d.ts[d.ts.length-1] + ' UTC | ' +
+      d.team1 + ': ' + (lastT1*100).toFixed(1) + '% | ' +
+      d.team2 + ': ' + (lastT2*100).toFixed(1) + '% | ' +
+      rounds + ' rounds, ' + killCount + ' kills | ' +
+      '<span class="status">LIVE</span>';
+
+    if (!chartReady) {
+      Plotly.newPlot('chart', traces, layout, {responsive: true});
+      chartReady = true;
+      // Listen for user zoom/pan events
+      document.getElementById('chart').on('plotly_relayout', function(ed) {
+        if (ignoreRelayout) return;
+        if (ed['xaxis.range[0]'] !== undefined || ed['xaxis.range'] !== undefined) {
+          userZoomed = true;
+          const el = document.getElementById('chart');
+          savedXRange = el.layout.xaxis.range.slice();
+          // Check if right edge is near the end of data
+          const lastTs = el.data[0].x[el.data[0].x.length - 1];
+          const rightEdge = savedXRange[1];
+          const diff = new Date(lastTs) - new Date(rightEdge);
+          rightPinned = Math.abs(diff) < 30000;
+        }
+        if (ed['xaxis.autorange']) {
+          userZoomed = false;
+          savedXRange = null;
+          rightPinned = true;
+        }
+      });
+    } else {
+      // Always update rangeslider to full data extent
+      layout.xaxis.rangeslider.range = [d.ts[0], d.ts[d.ts.length-1]];
+
+      if (userZoomed && savedXRange) {
+        // If right edge was pinned, update it to latest data
+        if (rightPinned) {
+          savedXRange[1] = d.ts[d.ts.length - 1];
+        }
+        layout.xaxis.range = savedXRange;
+        layout.xaxis.autorange = false;
+      }
+      ignoreRelayout = true;
+      Plotly.react('chart', traces, layout);
+
+      // Force rangeslider update via relayout
+      Plotly.relayout('chart', {
+        'xaxis.rangeslider.range': [d.ts[0], d.ts[d.ts.length-1]]
+      }).then(() => { ignoreRelayout = false; });
+    }
+  } catch(e) {
+    document.getElementById('info').textContent = 'Waiting for data...';
+  }
+}
+
+update();
+setInterval(update, 2000);
+</script>
+</body></html>
