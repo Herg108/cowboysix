@@ -721,7 +721,9 @@ document.addEventListener('keydown', (e) => {{
 
     # Rebuild site index
     try:
-        subprocess.run(["python3", "build_index.py"], capture_output=True, timeout=10)
+        result = subprocess.run(["python3", "build_index.py"], capture_output=True, timeout=10, text=True)
+        if result.returncode == 0:
+            print(f"Site index rebuilt.")
     except Exception:
         pass
 

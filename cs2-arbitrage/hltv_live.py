@@ -410,6 +410,13 @@ class HLTVTracker:
                 elif victim_team == getattr(self, 't_team_name', ''):
                     killer_side = "CT"
                     killer_team = getattr(self, 'ct_team_name', '?')
+                elif killer_name in self.ct_players:
+                    # Victim unknown, but we know the killer's side
+                    killer_side = "CT"
+                    killer_team = getattr(self, 'ct_team_name', '?')
+                elif killer_name in self.t_players:
+                    killer_side = "TERRORIST"
+                    killer_team = getattr(self, 't_team_name', '?')
                 else:
                     killer_side = "?"
                     killer_team = "?"
