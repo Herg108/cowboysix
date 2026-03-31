@@ -62,7 +62,10 @@ async def poll_price(client: httpx.AsyncClient, token_id: str) -> dict | None:
         # API returns bids ascending, asks descending — best bid is last, best ask is last
         best_bid = float(bids[-1]["price"]) if bids else None
         best_ask = float(asks[-1]["price"]) if asks else None
-        mid = (best_bid + best_ask) / 2 if best_bid and best_ask else None
+        if best_bid and best_ask:
+            mid = (best_bid + best_ask) / 2
+        else:
+            mid = best_bid or best_ask
         spread = (best_ask - best_bid) if best_bid and best_ask else None
         return {
             "best_bid": best_bid,
@@ -767,9 +770,9 @@ async def main_multi(maps_info: list):
         map_configs[m["map_label"]] = m
         map_labels.append(m["map_label"])
 
-    # Start HTTP server on first map's dir (will be updated on map switch)
+    # Start HTTP server on base match dir (will be updated on map switch)
     port = 8888
-    current_serve_dir = [str(Path(maps_info[0]["output_path"]))]
+    current_serve_dir = [str(base_dir)]
 
     class MapHandler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
