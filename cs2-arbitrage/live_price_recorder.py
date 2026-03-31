@@ -149,6 +149,42 @@ def load_hltv_events(chartfile: Path, records: list = None):
                 e["killer_team"] = player_team.get(e.get("killer", ""), "?")
             events.append(e)
 
+    # Check if the final scoreboard has a score not covered by any round_end
+    if scoreboards:
+        last_sb = scoreboards[-1]
+        s1 = last_sb.get("team1_score", 0)
+        s2 = last_sb.get("team2_score", 0)
+        total = s1 + s2
+        # Check if any round_end already covers this total
+        round_ends = [e for e in events if e.get("type") == "round_end"]
+        max_round_total = 0
+        for re in round_ends:
+            rt = re.get("ct_score", 0) + re.get("t_score", 0)
+            if rt > max_round_total:
+                max_round_total = rt
+        if total > max_round_total and (s1 != s2):
+            # Determine winner
+            ct_side = last_sb.get("ct_side", "?")
+            t_side = last_sb.get("t_side", "?")
+            team1 = last_sb.get("team1", "?")
+            if s1 > s2:
+                winner_side = "CT" if team1 == ct_side else "TERRORIST"
+            else:
+                winner_side = "CT" if team1 != ct_side else "TERRORIST"
+            winner_team = ct_side if winner_side == "CT" else t_side
+            ct_score = s1 if team1 == ct_side else s2
+            t_score = s2 if team1 == ct_side else s1
+            events.append({
+                "ts_ms": last_sb["ts_ms"],
+                "ts_iso": last_sb["ts_iso"],
+                "type": "round_end",
+                "winner": winner_side,
+                "winner_team": winner_team,
+                "win_type": "final_score",
+                "ct_score": ct_score,
+                "t_score": t_score,
+            })
+
     return events
 
 
@@ -243,8 +279,8 @@ let lastLen = 0;
 let chartReady = false;
 let userZoomed = false;
 let savedXRange = null;
-let rightPinned = true;  // right edge follows latest data
-let ignoreRelayout = false;  // guard against our own relayout calls
+let rightPinned = true;
+let ignoreRelayout = false;
 
 function buildTraces(d) {{
   const traces = [
@@ -338,14 +374,12 @@ async function update() {{
     if (!chartReady) {{
       Plotly.newPlot('chart', traces, layout, {{responsive: true}});
       chartReady = true;
-      // Listen for user zoom/pan events
       document.getElementById('chart').on('plotly_relayout', function(ed) {{
         if (ignoreRelayout) return;
         if (ed['xaxis.range[0]'] !== undefined || ed['xaxis.range'] !== undefined) {{
           userZoomed = true;
           const el = document.getElementById('chart');
           savedXRange = el.layout.xaxis.range.slice();
-          // Check if right edge is near the end of data
           const lastTs = el.data[0].x[el.data[0].x.length - 1];
           const rightEdge = savedXRange[1];
           const diff = new Date(lastTs) - new Date(rightEdge);
@@ -358,11 +392,9 @@ async function update() {{
         }}
       }});
     }} else {{
-      // Always update rangeslider to full data extent
       layout.xaxis.rangeslider.range = [d.ts[0], d.ts[d.ts.length-1]];
 
       if (userZoomed && savedXRange) {{
-        // If right edge was pinned, update it to latest data
         if (rightPinned) {{
           savedXRange[1] = d.ts[d.ts.length - 1];
         }}
@@ -371,8 +403,6 @@ async function update() {{
       }}
       ignoreRelayout = true;
       Plotly.react('chart', traces, layout);
-
-      // Force rangeslider update via relayout
       Plotly.relayout('chart', {{
         'xaxis.rangeslider.range': [d.ts[0], d.ts[d.ts.length-1]]
       }}).then(() => {{ ignoreRelayout = false; }});

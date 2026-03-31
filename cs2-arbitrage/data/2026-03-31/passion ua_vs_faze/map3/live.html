@@ -19,8 +19,8 @@ let lastLen = 0;
 let chartReady = false;
 let userZoomed = false;
 let savedXRange = null;
-let rightPinned = true;  // right edge follows latest data
-let ignoreRelayout = false;  // guard against our own relayout calls
+let rightPinned = true;
+let ignoreRelayout = false;
 
 function buildTraces(d) {
   const traces = [
@@ -114,14 +114,12 @@ async function update() {
     if (!chartReady) {
       Plotly.newPlot('chart', traces, layout, {responsive: true});
       chartReady = true;
-      // Listen for user zoom/pan events
       document.getElementById('chart').on('plotly_relayout', function(ed) {
         if (ignoreRelayout) return;
         if (ed['xaxis.range[0]'] !== undefined || ed['xaxis.range'] !== undefined) {
           userZoomed = true;
           const el = document.getElementById('chart');
           savedXRange = el.layout.xaxis.range.slice();
-          // Check if right edge is near the end of data
           const lastTs = el.data[0].x[el.data[0].x.length - 1];
           const rightEdge = savedXRange[1];
           const diff = new Date(lastTs) - new Date(rightEdge);
@@ -134,11 +132,9 @@ async function update() {
         }
       });
     } else {
-      // Always update rangeslider to full data extent
       layout.xaxis.rangeslider.range = [d.ts[0], d.ts[d.ts.length-1]];
 
       if (userZoomed && savedXRange) {
-        // If right edge was pinned, update it to latest data
         if (rightPinned) {
           savedXRange[1] = d.ts[d.ts.length - 1];
         }
@@ -147,8 +143,6 @@ async function update() {
       }
       ignoreRelayout = true;
       Plotly.react('chart', traces, layout);
-
-      // Force rangeslider update via relayout
       Plotly.relayout('chart', {
         'xaxis.rangeslider.range': [d.ts[0], d.ts[d.ts.length-1]]
       }).then(() => { ignoreRelayout = false; });

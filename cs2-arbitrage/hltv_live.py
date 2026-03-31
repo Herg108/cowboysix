@@ -93,7 +93,18 @@ def scrape_map_picks(driver):
         for i, m in enumerate(maps):
             name = m["name"].lower().strip()
             map_lookup[name] = i + 1
-            completed_scores.append(tuple(m["scores"]) if m["scores"] else None)
+            if m["scores"]:
+                s1, s2 = m["scores"]
+                hi, lo = max(s1, s2), min(s1, s2)
+                # Check if score is a valid final score
+                if lo <= 11:
+                    is_complete = hi == 13
+                else:
+                    ot_num = ((lo - 11) + 2) // 3
+                    is_complete = hi == 13 + 3 * ot_num
+                completed_scores.append((s1, s2) if is_complete else None)
+            else:
+                completed_scores.append(None)
 
         page_teams = (result.get("team1"), result.get("team2"))
         return map_lookup, completed_scores, best_of, page_teams
