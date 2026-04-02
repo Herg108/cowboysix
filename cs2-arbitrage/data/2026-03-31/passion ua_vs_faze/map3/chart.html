@@ -122,7 +122,7 @@ let currentRound = -1; // -1 = full match
 const strip = document.getElementById('roundStrip');
 const halfLen = 12;
 rounds.forEach((r, i) => {
-  if (i === halfLen) {
+  if (i === halfLen || (i >= 24 && (i - 24) % 3 === 0)) {
     const sep = document.createElement('div');
     sep.className = 'half-sep';
     strip.appendChild(sep);
