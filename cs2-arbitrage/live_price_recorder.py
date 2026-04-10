@@ -294,7 +294,7 @@ function buildTraces(d) {{
   const re = {{x:[], y:[], text:[], color:[], type: 'round_end'}};
   const rs = {{x:[], y:[], type: 'round_start'}};
   const fk = {{x:[], y:[], text:[], color:[], type: 'first_kill'}};
-  const kills = {{x:[], y:[], text:[], color:[], type: 'kill'}};
+  const kills = {{x:[], y:[], text:[], color:[], size:[], type: 'kill'}};
   const shapes = [];
   const annotations = [];
 
@@ -317,9 +317,18 @@ function buildTraces(d) {{
       fk.color.push(mc);
     }} else if (ev.type === 'kill') {{
       const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
-      kills.x.push(ev.t); kills.y.push(ev.y);
-      kills.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
-      kills.color.push(mc);
+      const txt = ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : '');
+      if (kills.x.length > 0 && kills.x[kills.x.length-1] === ev.t) {{
+        kills.text[kills.text.length-1] += '<br>' + txt;
+        const prev = kills.color[kills.color.length-1];
+        if (prev !== mc && prev !== '#d4c87a') kills.color[kills.color.length-1] = '#d4c87a';
+        kills.size[kills.size.length-1] = Math.min(kills.size[kills.size.length-1] + 2, 12);
+      }} else {{
+        kills.x.push(ev.t); kills.y.push(ev.y);
+        kills.text.push(txt);
+        kills.color.push(mc);
+        kills.size.push(4);
+      }}
     }}
   }}
 
@@ -328,7 +337,7 @@ function buildTraces(d) {{
   traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers',
     marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
   traces.push({{x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers',
-    marker: {{color: kills.color, size: 4, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+    marker: {{color: kills.color, size: kills.size, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
   traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers',
     marker: {{color: fk.color, size: 8, symbol: 'x', line: {{color: '#88ddaa', width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
 
@@ -653,7 +662,7 @@ function buildTraces(d) {{
   const re = {{x:[], y:[], text:[], color:[]}};
   const rs = {{x:[], y:[]}};
   const fk = {{x:[], y:[], text:[], color:[]}};
-  const kills = {{x:[], y:[], text:[], color:[]}};
+  const kills = {{x:[], y:[], text:[], color:[], size:[]}};
 
   for (const ev of (d.hltv || [])) {{
     if (ev.type === 'round_end') {{
@@ -674,14 +683,23 @@ function buildTraces(d) {{
       fk.color.push(mc);
     }} else if (ev.type === 'kill') {{
       const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
-      kills.x.push(ev.t); kills.y.push(ev.y);
-      kills.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
-      kills.color.push(mc);
+      const txt = ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : '');
+      if (kills.x.length > 0 && kills.x[kills.x.length-1] === ev.t) {{
+        kills.text[kills.text.length-1] += '<br>' + txt;
+        const prev = kills.color[kills.color.length-1];
+        if (prev !== mc && prev !== '#d4c87a') kills.color[kills.color.length-1] = '#d4c87a';
+        kills.size[kills.size.length-1] = Math.min(kills.size[kills.size.length-1] + 2, 12);
+      }} else {{
+        kills.x.push(ev.t); kills.y.push(ev.y);
+        kills.text.push(txt);
+        kills.color.push(mc);
+        kills.size.push(4);
+      }}
     }}
   }}
   traces.push({{x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers', marker: {{color: re.color, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}});
   traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers', marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
-  traces.push({{x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers', marker: {{color: kills.color, size: 4, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers', marker: {{color: kills.color, size: kills.size, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
   traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers', marker: {{color: fk.color, size: 8, symbol: 'x', line: {{color: '#88ddaa', width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
   return {{traces, shapes, annotations}};
 }}
