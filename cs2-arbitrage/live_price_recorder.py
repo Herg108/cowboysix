@@ -193,6 +193,23 @@ def write_data_json(chartfile: Path, records: list, team1_name: str, team2_name:
     t1 = team1_name.lower()
     t2 = team2_name.lower()
 
+    # Extract map name from HLTV events
+    hltv_file = chartfile.parent / "hltv_events.jsonl"
+    map_name = ""
+    if hltv_file.exists():
+        with open(hltv_file) as f:
+            for line in f:
+                if line.strip():
+                    evt = json_mod.loads(line)
+                    if evt.get("type") == "scoreboard" and evt.get("map"):
+                        map_name = evt["map"].replace("de_", "").capitalize()
+                        break
+
+    map_num = ""
+    folder = chartfile.parent.name
+    if folder.startswith("map"):
+        map_num = f"Map {folder[3:]}"
+
     data = {
         "team1": team1_name,
         "team2": team2_name,
@@ -201,6 +218,8 @@ def write_data_json(chartfile: Path, records: list, team1_name: str, team2_name:
         "t1_bid": [r.get(f"{t1}_bid") for r in records],
         "t1_ask": [r.get(f"{t1}_ask") for r in records],
         "t2_mid": [r.get(f"{t2}_mid") for r in records],
+        "map_name": map_name,
+        "map_num": map_num,
         "hltv": [],
     }
 
@@ -260,18 +279,41 @@ def write_chart_html(chartfile: Path, team1_name: str, team2_name: str, port: in
     """Write the HTML shell once. It polls live_data.json via JS."""
     html = f"""<!DOCTYPE html>
 <html><head>
+<meta charset="utf-8">
 <title>{team1_name} vs {team2_name}</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
   body {{ background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }}
-  h1 {{ text-align: center; color: #e94560; margin-bottom: 5px; }}
-  .info {{ text-align: center; color: #999; margin-bottom: 10px; }}
-  #chart {{ width: 100%; height: 80vh; }}
+  h1 {{ text-align: center; color: #e94560; margin-bottom: 2px; }}
+  .subtitle {{ text-align: center; color: #777; font-size: 14px; margin-bottom: 4px; }}
+  .info {{ text-align: center; color: #999; margin-bottom: 10px; font-size: 13px; }}
+  #chart {{ width: 100%; height: 70vh; }}
+  .controls {{ display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; }}
+  .controls button {{
+    background: #16213e; border: 1px solid #333; color: #eee; padding: 6px 14px;
+    border-radius: 4px; cursor: pointer; font-size: 14px;
+  }}
+  .controls button:hover {{ background: #1a2a4e; }}
+  .controls button.active {{ border-color: #00d4ff; color: #00d4ff; }}
+  .round-strip {{
+    display: flex; justify-content: center; gap: 2px; margin-bottom: 10px; flex-wrap: wrap;
+  }}
+  .round-box {{
+    width: 22px; height: 22px; border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: bold; color: #fff; opacity: 0.7;
+  }}
+  .half-sep {{ width: 8px; }}
   .status {{ color: #4caf50; }}
 </style>
 </head><body>
 <h1>{team1_name} vs {team2_name}</h1>
+<div class="subtitle" id="subtitle"></div>
 <div class="info" id="info">Loading...</div>
+<div class="controls">
+  <button onclick="toggleDetail()" id="detailBtn">Detail</button>
+</div>
+<div class="round-strip" id="roundStrip"></div>
 <div id="chart"></div>
 <script>
 const DATA_URL = 'live_data.json';
@@ -281,77 +323,98 @@ let userZoomed = false;
 let savedXRange = null;
 let rightPinned = true;
 let ignoreRelayout = false;
+let detailVisible = false;
+
+function toggleDetail() {{
+  detailVisible = !detailVisible;
+  Plotly.restyle('chart', {{visible: detailVisible}}, [1, 2, 3]);
+  document.getElementById('detailBtn').classList.toggle('active', detailVisible);
+}}
 
 function buildTraces(d) {{
   const traces = [
     {{x: d.ts, y: d.t1_mid, name: d.team1, line: {{color: '#00d4ff', width: 2}}}},
-    {{x: d.ts, y: d.t2_mid, name: d.team2, line: {{color: '#ff9f43', width: 2}}}},
-    {{x: d.ts, y: d.t1_bid, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, showlegend: false}},
-    {{x: d.ts, y: d.t1_ask, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false}},
+    {{x: d.ts, y: d.t2_mid, name: d.team2, line: {{color: '#ff9f43', width: 2}}, visible: false}},
+    {{x: d.ts, y: d.t1_bid, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, visible: false, showlegend: false}},
+    {{x: d.ts, y: d.t1_ask, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.07)', visible: false, showlegend: false}},
   ];
-
-  // HLTV events
-  const re = {{x:[], y:[], text:[], color:[], type: 'round_end'}};
-  const rs = {{x:[], y:[], type: 'round_start'}};
-  const fk = {{x:[], y:[], text:[], color:[], type: 'first_kill'}};
-  const kills = {{x:[], y:[], text:[], color:[], size:[], type: 'kill'}};
   const shapes = [];
   const annotations = [];
+  const re = {{x:[], y:[], text:[], color:[]}};
+  const rs = {{x:[], y:[]}};
+  const fk = {{x:[], y:[], text:[], color:[]}};
+  const kills1 = {{x:[], y:[], text:[], size:[]}};
+  const kills2 = {{x:[], y:[], text:[], size:[]}};
 
+  let reCount = 0;
   for (const ev of (d.hltv || [])) {{
     if (ev.type === 'round_end') {{
       const mc = ev.t1_win ? '#00ff64' : '#ff3c3c';
-      const bg = ev.t1_win ? 'rgba(0,255,100,0.4)' : 'rgba(255,60,60,0.4)';
       re.x.push(ev.t); re.y.push(ev.y);
       re.text.push(ev.winner + ' wins<br>CT ' + ev.ct_score + '-' + ev.t_score + ' T<br>' + ev.win_type.replace(/_/g, ' '));
       re.color.push(mc);
-      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:bg,width:1,dash:'dot'}}}});
-      annotations.push({{x:ev.t,y:1.03,xref:'x',yref:'y',text:ev.ct_score+'-'+ev.t_score,showarrow:false,font:{{color:mc,size:10}}}});
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:-0.06,y1:1,line:{{color:'rgba(255,255,255,0.08)',width:1}}}});
+      const yPos = reCount % 2 === 0 ? 1.03 : 1.07;
+      annotations.push({{x:ev.t,y:yPos,xref:'x',yref:'y',text:ev.ct_score+'-'+ev.t_score,showarrow:false,font:{{color:mc,size:9}}}});
+      reCount++;
     }} else if (ev.type === 'round_start') {{
       rs.x.push(ev.t); rs.y.push(ev.y);
-      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}}}});
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:-0.06,y1:1,line:{{color:'rgba(255,255,0,0.12)',width:1,dash:'dot'}}}});
     }} else if (ev.type === 'first_kill') {{
       const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
-      fk.x.push(ev.t); fk.y.push(ev.y);
+      fk.x.push(ev.t); fk.y.push(-0.03);
       fk.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
       fk.color.push(mc);
     }} else if (ev.type === 'kill') {{
-      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
       const txt = ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : '');
-      if (kills.x.length > 0 && kills.x[kills.x.length-1] === ev.t) {{
-        kills.text[kills.text.length-1] += '<br>' + txt;
-        const prev = kills.color[kills.color.length-1];
-        if (prev !== mc && prev !== '#d4c87a') kills.color[kills.color.length-1] = '#d4c87a';
-        kills.size[kills.size.length-1] = Math.min(kills.size[kills.size.length-1] + 2, 12);
+      const k = ev.t1_kill ? kills1 : kills2;
+      const yBase = ev.t1_kill ? -0.02 : -0.04;
+      if (k.x.length > 0 && k.x[k.x.length-1] === ev.t) {{
+        k.text[k.text.length-1] += '<br>' + txt;
       }} else {{
-        kills.x.push(ev.t); kills.y.push(ev.y);
-        kills.text.push(txt);
-        kills.color.push(mc);
-        kills.size.push(4);
+        k.x.push(ev.t); k.y.push(yBase);
+        k.text.push(txt);
       }}
     }}
   }}
-
-  traces.push({{x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers',
-    marker: {{color: re.color, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}});
-  traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers',
-    marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
-  traces.push({{x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers',
-    marker: {{color: kills.color, size: kills.size, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
-  traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers',
-    marker: {{color: fk.color, size: 8, symbol: 'x', line: {{color: '#88ddaa', width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
-
+  traces.push({{x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers', marker: {{color: re.color, size: 8, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers', marker: {{color: 'rgba(255,255,0,0.5)', size: 5, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
+  traces.push({{x: kills1.x, y: kills1.y, text: kills1.text, name: d.team1 + ' Kill', mode: 'markers', marker: {{color: '#00ff64', size: 4, symbol: 'line-ns', line: {{width: 2, color: '#00ff64'}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: kills2.x, y: kills2.y, text: kills2.text, name: d.team2 + ' Kill', mode: 'markers', marker: {{color: '#ff3c3c', size: 4, symbol: 'line-ns', line: {{width: 2, color: '#ff3c3c'}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers', marker: {{color: fk.color, size: 7, symbol: 'x', line: {{width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
   return {{traces, shapes, annotations}};
+}}
+
+function buildRoundStrip(d) {{
+  const strip = document.getElementById('roundStrip');
+  strip.innerHTML = '';
+  const roundEnds = (d.hltv || []).filter(e => e.type === 'round_end');
+  const halfLen = 12;
+  roundEnds.forEach((re, i) => {{
+    const rn = re.ct_score + re.t_score;
+    if (rn === halfLen + 1 || (rn > 24 && (rn - 25) % 3 === 0)) {{
+      const sep = document.createElement('div');
+      sep.className = 'half-sep';
+      strip.appendChild(sep);
+    }}
+    const box = document.createElement('div');
+    box.className = 'round-box';
+    box.style.background = re.t1_win ? '#00aa44' : '#cc2222';
+    box.title = 'R' + rn + ': CT ' + re.ct_score + '-' + re.t_score + ' T';
+    box.textContent = rn;
+    strip.appendChild(box);
+  }});
 }}
 
 function getLayout(d, shapes, annotations) {{
   return {{
     paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
-    xaxis: {{title: 'Time (UTC)', gridcolor: '#333',
+    xaxis: {{title: 'Time (UTC)', gridcolor: '#222',
       range: [d.ts[0], d.ts[d.ts.length-1]],
       rangeslider: {{visible: true, bgcolor: '#1a1a2e', thickness: 0.08,
         range: [d.ts[0], d.ts[d.ts.length-1]]}}}},
-    yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'}},
+    yaxis: {{title: 'Win Probability', gridcolor: '#222', range: [-0.06, 1.12], tickformat: '.0%',
+      zeroline: true, zerolinecolor: '#444', zerolinewidth: 1}},
     showlegend: false, hovermode: 'x unified', margin: {{t: 40, b: 80}},
     shapes: shapes,
     annotations: annotations,
@@ -369,16 +432,29 @@ async function update() {{
     const {{traces, shapes, annotations}} = buildTraces(d);
     const layout = getLayout(d, shapes, annotations);
 
+    // Subtitle
+    const parts = [];
+    if (d.map_num) parts.push(d.map_num);
+    if (d.map_name) parts.push(d.map_name);
+    const roundEnds = d.hltv.filter(e => e.type === 'round_end');
+    if (roundEnds.length > 0) {{
+      const last = roundEnds[roundEnds.length - 1];
+      parts.push(last.ct_score + '-' + last.t_score);
+    }}
+    document.getElementById('subtitle').textContent = parts.join(' \u2022 ');
+
+    // Info bar
     const lastT1 = d.t1_mid.filter(v => v !== null).pop() || 0;
     const lastT2 = d.t2_mid.filter(v => v !== null).pop() || 0;
-    const rounds = d.hltv.filter(e => e.type === 'round_end').length;
     const killCount = d.hltv.filter(e => e.type === 'kill' || e.type === 'first_kill').length;
     document.getElementById('info').innerHTML =
-      d.ts.length + ' pts | ' + d.ts[d.ts.length-1] + ' UTC | ' +
-      d.team1 + ': ' + (lastT1*100).toFixed(1) + '% | ' +
-      d.team2 + ': ' + (lastT2*100).toFixed(1) + '% | ' +
-      rounds + ' rounds, ' + killCount + ' kills | ' +
+      d.team1 + ': <b>' + (lastT1*100).toFixed(1) + '%</b> | ' +
+      d.team2 + ': <b>' + (lastT2*100).toFixed(1) + '%</b> | ' +
+      roundEnds.length + ' rounds | ' + killCount + ' kills | ' +
       '<span class="status">LIVE</span>';
+
+    // Round strip
+    buildRoundStrip(d);
 
     if (!chartReady) {{
       Plotly.newPlot('chart', traces, layout, {{responsive: true}});
@@ -447,6 +523,23 @@ def write_static_chart(chartfile: Path, records: list, team1_name: str, team2_na
     t1 = team1_name.lower()
     t2 = team2_name.lower()
 
+    # Extract map name from HLTV events
+    hltv_file = chartfile.parent / "hltv_events.jsonl"
+    map_name = ""
+    if hltv_file.exists():
+        with open(hltv_file) as f:
+            for line in f:
+                if line.strip():
+                    evt = json_mod.loads(line)
+                    if evt.get("type") == "scoreboard" and evt.get("map"):
+                        map_name = evt["map"].replace("de_", "").capitalize()
+                        break
+
+    map_num = ""
+    folder = chartfile.parent.name
+    if folder.startswith("map"):
+        map_num = f"Map {folder[3:]}"
+
     data = {
         "team1": team1_name,
         "team2": team2_name,
@@ -455,6 +548,8 @@ def write_static_chart(chartfile: Path, records: list, team1_name: str, team2_na
         "t1_bid": [r.get(f"{t1}_bid") for r in records],
         "t1_ask": [r.get(f"{t1}_ask") for r in records],
         "t2_mid": [r.get(f"{t2}_mid") for r in records],
+        "map_name": map_name,
+        "map_num": map_num,
         "hltv": [],
     }
 
@@ -507,12 +602,14 @@ def write_static_chart(chartfile: Path, records: list, team1_name: str, team2_na
 
     html = f"""<!DOCTYPE html>
 <html><head>
+<meta charset="utf-8">
 <title>{team1_name} vs {team2_name}</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
   body {{ background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }}
-  h1 {{ text-align: center; color: #e94560; margin-bottom: 5px; }}
-  .info {{ text-align: center; color: #999; margin-bottom: 10px; }}
+  h1 {{ text-align: center; color: #e94560; margin-bottom: 2px; }}
+  .subtitle {{ text-align: center; color: #777; font-size: 14px; margin-bottom: 4px; }}
+  .info {{ text-align: center; color: #999; margin-bottom: 10px; font-size: 13px; }}
   #chart {{ width: 100%; height: 70vh; }}
   .controls {{ display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; }}
   .controls button {{
@@ -536,11 +633,14 @@ def write_static_chart(chartfile: Path, records: list, team1_name: str, team2_na
 </style>
 </head><body>
 <h1>{team1_name} vs {team2_name}</h1>
+<div class="subtitle" id="subtitle"></div>
 <div class="info" id="info"></div>
 <div class="controls">
   <button onclick="prevRound()" title="Previous round (Left arrow)">&#9664; Prev</button>
   <button onclick="showAll()" id="allBtn" class="active">Full Match</button>
   <button onclick="nextRound()" title="Next round (Right arrow)">Next &#9654;</button>
+  <span style="width:20px"></span>
+  <button onclick="toggleDetail()" id="detailBtn">Detail</button>
 </div>
 <div class="round-strip" id="roundStrip"></div>
 <div id="chart"></div>
@@ -650,73 +750,93 @@ rounds.forEach((r, i) => {{
   strip.appendChild(box);
 }});
 
+let detailVisible = false;
+function toggleDetail() {{
+  detailVisible = !detailVisible;
+  const vis = detailVisible ? true : false;
+  Plotly.restyle('chart', {{visible: vis}}, [1, 2, 3]);
+  document.getElementById('detailBtn').classList.toggle('active', detailVisible);
+}}
+
 function buildTraces(d) {{
   const traces = [
     {{x: d.ts, y: d.t1_mid, name: d.team1, line: {{color: '#00d4ff', width: 2}}}},
-    {{x: d.ts, y: d.t2_mid, name: d.team2, line: {{color: '#ff9f43', width: 2}}}},
-    {{x: d.ts, y: d.t1_bid, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, showlegend: false}},
-    {{x: d.ts, y: d.t1_ask, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.1)', showlegend: false}},
+    {{x: d.ts, y: d.t2_mid, name: d.team2, line: {{color: '#ff9f43', width: 2}}, visible: false}},
+    {{x: d.ts, y: d.t1_bid, name: 'Bid', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, visible: false, showlegend: false}},
+    {{x: d.ts, y: d.t1_ask, name: 'Ask', line: {{color: '#00d4ff', width: 1, dash: 'dot'}}, fill: 'tonexty', fillcolor: 'rgba(0,212,255,0.07)', visible: false, showlegend: false}},
   ];
   const shapes = [];
   const annotations = [];
   const re = {{x:[], y:[], text:[], color:[]}};
   const rs = {{x:[], y:[]}};
   const fk = {{x:[], y:[], text:[], color:[]}};
-  const kills = {{x:[], y:[], text:[], color:[], size:[]}};
+  const kills1 = {{x:[], y:[], text:[], size:[]}};  // team1 kills
+  const kills2 = {{x:[], y:[], text:[], size:[]}};  // team2 kills
+  const killsU = {{x:[], y:[], text:[], size:[]}};  // unknown team kills
 
+  let reCount = 0;
   for (const ev of (d.hltv || [])) {{
     if (ev.type === 'round_end') {{
       const mc = ev.t1_win ? '#00ff64' : '#ff3c3c';
-      const bg = ev.t1_win ? 'rgba(0,255,100,0.4)' : 'rgba(255,60,60,0.4)';
       re.x.push(ev.t); re.y.push(ev.y);
       re.text.push(ev.winner + ' wins<br>CT ' + ev.ct_score + '-' + ev.t_score + ' T<br>' + ev.win_type.replace(/_/g, ' '));
       re.color.push(mc);
-      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:bg,width:1,dash:'dot'}}}});
-      annotations.push({{x:ev.t,y:1.03,xref:'x',yref:'y',text:ev.ct_score+'-'+ev.t_score,showarrow:false,font:{{color:mc,size:10}}}});
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:-0.06,y1:1,line:{{color:'rgba(255,255,255,0.08)',width:1}}}});
+      const yPos = reCount % 2 === 0 ? 1.03 : 1.07;
+      annotations.push({{x:ev.t,y:yPos,xref:'x',yref:'y',text:ev.ct_score+'-'+ev.t_score,showarrow:false,font:{{color:mc,size:9}}}});
+      reCount++;
     }} else if (ev.type === 'round_start') {{
       rs.x.push(ev.t); rs.y.push(ev.y);
-      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:0,y1:1,line:{{color:'rgba(255,255,0,0.4)',width:1,dash:'dash'}}}});
+      shapes.push({{type:'line',x0:ev.t,x1:ev.t,y0:-0.06,y1:1,line:{{color:'rgba(255,255,0,0.12)',width:1,dash:'dot'}}}});
     }} else if (ev.type === 'first_kill') {{
       const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
-      fk.x.push(ev.t); fk.y.push(ev.y);
+      fk.x.push(ev.t); fk.y.push(-0.03);
       fk.text.push(ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : ''));
       fk.color.push(mc);
     }} else if (ev.type === 'kill') {{
-      const mc = ev.t1_kill ? '#00ff64' : '#ff3c3c';
       const txt = ev.killer + ' -> ' + ev.victim + ' [' + ev.weapon + ']' + (ev.headshot ? ' (HS)' : '');
-      if (kills.x.length > 0 && kills.x[kills.x.length-1] === ev.t) {{
-        kills.text[kills.text.length-1] += '<br>' + txt;
-        const prev = kills.color[kills.color.length-1];
-        if (prev !== mc && prev !== '#d4c87a') kills.color[kills.color.length-1] = '#d4c87a';
-        kills.size[kills.size.length-1] = Math.min(kills.size[kills.size.length-1] + 2, 12);
+      const k = ev.t1_kill ? kills1 : kills2;
+      const yBase = ev.t1_kill ? -0.02 : -0.04;
+      if (k.x.length > 0 && k.x[k.x.length-1] === ev.t) {{
+        k.text[k.text.length-1] += '<br>' + txt;
       }} else {{
-        kills.x.push(ev.t); kills.y.push(ev.y);
-        kills.text.push(txt);
-        kills.color.push(mc);
-        kills.size.push(4);
+        k.x.push(ev.t); k.y.push(yBase);
+        k.text.push(txt);
       }}
     }}
   }}
-  traces.push({{x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers', marker: {{color: re.color, size: 10, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}});
-  traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers', marker: {{color: '#ffff00', size: 8, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
-  traces.push({{x: kills.x, y: kills.y, text: kills.text, name: 'Kill', mode: 'markers', marker: {{color: kills.color, size: kills.size, symbol: 'circle'}}, hovertemplate: '%{{text}}<extra></extra>'}});
-  traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers', marker: {{color: fk.color, size: 8, symbol: 'x', line: {{color: '#88ddaa', width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: re.x, y: re.y, text: re.text, name: 'Round End', mode: 'markers', marker: {{color: re.color, size: 8, symbol: 'diamond'}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: rs.x, y: rs.y, name: 'Round Start', mode: 'markers', marker: {{color: 'rgba(255,255,0,0.5)', size: 5, symbol: 'triangle-up'}}, hovertemplate: 'Round Start<extra></extra>'}});
+  traces.push({{x: kills1.x, y: kills1.y, text: kills1.text, name: d.team1 + ' Kill', mode: 'markers', marker: {{color: '#00ff64', size: 4, symbol: 'line-ns', line: {{width: 2, color: '#00ff64'}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: kills2.x, y: kills2.y, text: kills2.text, name: d.team2 + ' Kill', mode: 'markers', marker: {{color: '#ff3c3c', size: 4, symbol: 'line-ns', line: {{width: 2, color: '#ff3c3c'}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
+  traces.push({{x: fk.x, y: fk.y, text: fk.text, name: 'First Kill', mode: 'markers', marker: {{color: fk.color, size: 7, symbol: 'x', line: {{width: 1}}}}, hovertemplate: '%{{text}}<extra></extra>'}});
   return {{traces, shapes, annotations}};
 }}
 
 const {{traces, shapes, annotations}} = buildTraces(d);
 const killCount = d.hltv.filter(e => e.type === 'kill' || e.type === 'first_kill').length;
-const lastT1 = d.t1_mid.filter(v => v !== null).pop() || 0;
-const lastT2 = d.t2_mid.filter(v => v !== null).pop() || 0;
+
+// Subtitle: map name + map number
+const parts = [];
+if (d.map_num) parts.push(d.map_num);
+if (d.map_name) parts.push(d.map_name);
+// Final score from last round_end
+const lastRE = roundEnds.length > 0 ? roundEnds[roundEnds.length - 1] : null;
+if (lastRE) {{
+  const finalScore = lastRE.ct_score + '-' + lastRE.t_score;
+  const winner = lastRE.winner;
+  parts.push(finalScore + ' ' + winner + ' wins');
+}}
+document.getElementById('subtitle').textContent = parts.join(' \u2022 ');
+
 document.getElementById('info').innerHTML =
-  d.ts.length + ' pts | ' + d.team1 + ': ' + (lastT1*100).toFixed(1) + '% | ' +
-  d.team2 + ': ' + (lastT2*100).toFixed(1) + '% | ' +
-  rounds.length + ' rounds, ' + killCount + ' kills';
+  d.ts.length + ' price points | ' + rounds.length + ' rounds | ' + killCount + ' kills';
 
 Plotly.newPlot('chart', traces, {{
   paper_bgcolor: '#1a1a2e', plot_bgcolor: '#16213e', font: {{color: '#eee'}},
-  xaxis: {{title: 'Time (UTC)', gridcolor: '#333', rangeslider: {{visible: true, bgcolor: '#1a1a2e', thickness: 0.08}}}},
-  yaxis: {{title: 'Win Probability', gridcolor: '#333', range: [0, 1.08], tickformat: '.0%'}},
+  xaxis: {{title: 'Time (UTC)', gridcolor: '#222', rangeslider: {{visible: true, bgcolor: '#1a1a2e', thickness: 0.08}}}},
+  yaxis: {{title: 'Win Probability', gridcolor: '#222', range: [-0.06, 1.12], tickformat: '.0%',
+    zeroline: true, zerolinecolor: '#444', zerolinewidth: 1}},
   showlegend: false, hovermode: 'x unified', margin: {{t: 40, b: 80}},
   shapes: shapes, annotations: annotations,
 }}, {{responsive: true}});
