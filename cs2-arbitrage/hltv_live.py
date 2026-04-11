@@ -45,6 +45,10 @@ def scrape_map_picks(driver):
                 const boMatch = text.match(/Best of (\\d+)/i);
                 if (boMatch) bestOf = parseInt(boMatch[1]);
             }
+            // Fallback: infer from number of map holders
+            const allHolders = document.querySelectorAll('.mapholder');
+            if (bestOf === 3 && allHolders.length === 5) bestOf = 5;
+            if (bestOf === 3 && allHolders.length === 1) bestOf = 1;
 
             // Get map holders - these are the actual maps to be played (not bans)
             const holders = document.querySelectorAll('.mapholder');
@@ -473,7 +477,6 @@ def main():
 
     print(f"Opening HLTV: {args.url}")
     print(f"Base output: {args.output}")
-    print(f"Best of {args.best_of}")
     print()
 
     options = uc.ChromeOptions()
@@ -556,8 +559,11 @@ def main():
         print("Scorebot connected! Listening for events...\n")
 
         done = False
+        last_event_time = time.time()
+        STALE_TIMEOUT = 90  # seconds with no events before forcing reload
         while not done:
             logs = driver.get_log("performance")
+            got_event = False
 
             for entry in logs:
                 msg = json.loads(entry["message"])["message"]
@@ -569,10 +575,28 @@ def main():
                     chrome_ts = params.get("timestamp", 0)
 
                     if payload and len(payload) > 10:
+                        got_event = True
+                        last_event_time = time.time()
                         result = tracker.process_frame(payload, chrome_ts)
                         if result == "stop":
                             done = True
                             break
+
+            if done:
+                break
+
+            # Detect dead WebSocket — no events for STALE_TIMEOUT seconds
+            silence = time.time() - last_event_time
+            if silence >= STALE_TIMEOUT:
+                print(f"\n[WARN] No scorebot events for {int(silence)}s — connection likely dead. Reloading page...")
+                driver.refresh()
+                time.sleep(5)
+                driver.get_log("performance")  # drain stale logs
+                last_event_time = time.time()
+                # Re-scrape map picks after reload
+                ml, cs, bo, pt = scrape_map_picks(driver)
+                if ml:
+                    tracker.set_map_picks(ml, cs, bo, pt)
 
             time.sleep(args.interval)
 

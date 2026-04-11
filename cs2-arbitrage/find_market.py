@@ -57,18 +57,14 @@ def search_markets(query: str):
             if len(outs) != 2:
                 continue
 
-            is_map_winner = ("map 1" in q_lower or "map 2" in q_lower or "map 3" in q_lower) and "winner" in q_lower
+            # Detect map N winner markets
+            import re as _re
+            map_match = _re.search(r'map (\d+)', q_lower)
+            is_map_winner = map_match is not None and "winner" in q_lower
             is_moneyline = "map" not in q_lower and "total" not in q_lower and "handicap" not in q_lower and "odd" not in q_lower
 
             if is_map_winner:
-                if "map 1" in q_lower:
-                    map_label = "map1"
-                elif "map 2" in q_lower:
-                    map_label = "map2"
-                elif "map 3" in q_lower:
-                    map_label = "map3"
-                else:
-                    continue
+                map_label = f"map{map_match.group(1)}"
             elif is_moneyline:
                 map_label = "moneyline"
             else:
@@ -95,21 +91,29 @@ def search_markets(query: str):
                 "output_path": output_path,
             })
 
-    # If no map3 market but we have a moneyline, use it as map3 (in bo3, map3 winner = series winner)
+    # If moneyline exists, use it as the last map if that map market is missing
+    # (in bo3, map3 winner = series winner; in bo5, map5 winner = series winner)
     labels = {r["map_label"] for r in results}
-    if "map3" not in labels and "moneyline" in labels:
+    map_nums = sorted([int(l[3:]) for l in labels if l.startswith("map")])
+    max_map = max(map_nums) if map_nums else 0
+    # Determine bo size from map markets
+    if max_map <= 3:
+        last_map = "map3"
+    else:
+        last_map = f"map{max_map + 1}" if max_map < 5 else "map5"
+
+    if last_map not in labels and "moneyline" in labels:
         for r in results:
             if r["map_label"] == "moneyline":
-                r["map_label"] = "map3"
-                r["output_path"] = r["output_path"].replace("/moneyline", "/map3")
+                r["map_label"] = last_map
+                r["output_path"] = r["output_path"].replace("/moneyline", f"/{last_map}")
                 break
 
-    # Remove moneyline if we already have map3
+    # Remove moneyline if we already have the last map
     results = [r for r in results if r["map_label"] != "moneyline"]
 
-    # Sort: map1, map2, map3
-    order = {"map1": 0, "map2": 1, "map3": 2}
-    results.sort(key=lambda r: order.get(r["map_label"], 9))
+    # Sort by map number
+    results.sort(key=lambda r: int(r["map_label"][3:]) if r["map_label"].startswith("map") else 99)
     return results
 
 
@@ -161,7 +165,8 @@ def main():
 
     # Start HLTV tracker
     if hltv_url:
-        best_of = max(3, len(results))  # infer from number of map markets
+        # infer bo from number of map markets: 1-3 maps = bo3, 4-5 maps = bo5
+        best_of = 5 if len(results) > 3 else 3
 
         print(f"\nStarting HLTV tracker (series mode)")
         print(f"  URL: {hltv_url}")
